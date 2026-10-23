@@ -1,0 +1,7 @@
+target/
+nbactions.xml
+nb-configuration.xml
+nbproject/private/
+.claude/
+CLAUDE.md
+*.class
