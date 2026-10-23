@@ -14,6 +14,7 @@ final class Resultados {
     private final String titulo;
     private final ListaEnlazada<String> hechos = new ListaEnlazada<>();
     private final ListaEnlazada<PCB> procesos = new ListaEnlazada<>();
+    private final ListaEnlazada<String> secciones = new ListaEnlazada<>();
     private String grupo;
     private int correctasGrupo;
     private int fallidasGrupo;
@@ -52,6 +53,11 @@ final class Resultados {
         return pcb;
     }
 
+    /** Agrega una línea al bloque de estado del sistema del resumen (CPU, RAM, dispositivos). */
+    void seccion(String texto) {
+        secciones.agregarFinal(texto);
+    }
+
     /** Cierra la etapa e imprime el resumen gráfico. */
     void cerrar() {
         cerrarGrupo();
@@ -60,7 +66,7 @@ final class Resultados {
         } else {
             Debug.error(ORIGEN, titulo + ": " + fallidas + " fallos");
         }
-        ReporteTerminal.resumenEtapa(etapa, titulo, hechos, procesos, correctas, fallidas);
+        ReporteTerminal.resumenEtapa(etapa, titulo, hechos, secciones, procesos, correctas, fallidas);
     }
 
     /** Pasa el conteo del grupo actual a la lista de lo hecho. */

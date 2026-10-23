@@ -1,18 +1,53 @@
 {
   "_ayuda": {
-    "nombre": "Texto no vacío",
-    "tipo": "CPU_BOUND | IO_BOUND | PRODUCTOR | CONSUMIDOR",
-    "prioridad": "Entero de 1 (más importante) a 10 (menos importante)",
-    "memoria": "Entero > 0. Unidades de RAM que ocupa el proceso",
-    "deadline": "Entero > 0. Ciclos de reloj antes de que el proceso sea terminado",
-    "computador": "Número del computador (0, 1, ...) o -1 para asignación automática",
-    "instrucciones": "Solo CPU_BOUND e IO_BOUND. Entero > 0",
-    "cadaCiclosES": "Solo IO_BOUND. Cada cuántas instrucciones pide E/S",
-    "duracionES": "Solo IO_BOUND. Ciclos que dura cada E/S",
-    "buffer": "Solo PRODUCTOR y CONSUMIDOR. Nombre del buffer (ej. B1)",
-    "ciclosPorElemento": "Solo PRODUCTOR y CONSUMIDOR. Ciclos para producir o consumir un elemento",
-    "elementos": "Solo PRODUCTOR y CONSUMIDOR. Elementos que debe procesar para terminar"
+    "_nota": "Archivo SOLO de documentación: el programa no lo lee. La configuración real es config/avilaosconfigs.json y tiene este mismo formato (sin la sección _ayuda). Si un valor es inválido, el sistema avisa con ERROR y usa el valor por defecto (entre paréntesis).",
+    "debugger": "true o false (también \"TRUE\" / \"FALSE\"). Activa los mensajes de la terminal (true)",
+
+    "simulacion.duracionCicloMs": "Entero 0..60000. Milisegundos que dura cada ciclo de reloj; 0 = sin espera (500)",
+    "simulacion.maxCiclos": "Entero >= 0. Ciclos tras los que la simulación se detiene sola; 0 = sin límite (0)",
+    "simulacion.latenciaRed": "Entero 0..1000. Ciclos que se bloquea un proceso en cada inserción o extracción sobre un buffer de otro computador (2)",
+    "simulacion.envejecimientoCadaCiclos": "Entero 0..100000. Cada cuántos ciclos en Listos mejora en 1 la prioridad de un proceso; 0 = sin envejecimiento (10)",
+
+    "computadores": "Lista con un objeto por computador. Mínimo 2, máximo 8. El primero es el computador 0, el segundo el 1, ...",
+    "computadores[].ram": "Entero 1..1000000. Capacidad de la RAM, en las mismas unidades que la memoria de procesos y buffers (1024)",
+    "computadores[].politica": "Política inicial: FCFS | EDF | ROUND_ROBIN | PRIORIDADES (FCFS). Se puede cambiar durante la simulación",
+    "computadores[].quantum": "Entero 1..1000. Quantum de Round Robin en ciclos (3). Se puede cambiar durante la simulación",
+
+    "buffers": "Lista de buffers del productor-consumidor. Cada buffer ocupa en la RAM de su anfitrión tanto como su capacidad",
+    "buffers[].nombre": "Texto no vacío y único (ej. B1). Es el nombre que usan los procesos en su campo buffer",
+    "buffers[].capacidad": "Entero 1..10000. Cantidad máxima de elementos que caben en el buffer",
+    "buffers[].computador": "Número del computador anfitrión (0, 1, ...). El acceso desde otro computador es remoto y paga latenciaRed",
+
+    "procesos": "Carga inicial de procesos. Los inválidos se omiten con ERROR",
+    "procesos[].nombre": "Texto no vacío",
+    "procesos[].tipo": "CPU_BOUND | IO_BOUND | PRODUCTOR | CONSUMIDOR",
+    "procesos[].prioridad": "Entero 1 (más importante) .. 10 (menos importante)",
+    "procesos[].memoria": "Entero > 0. Unidades de RAM que ocupa el proceso",
+    "procesos[].deadline": "Entero > 0. Ciclos de reloj antes de que el proceso sea terminado",
+    "procesos[].computador": "Número del computador (0, 1, ...) o -1 para asignación automática. Si se omite vale 0",
+    "procesos[].instrucciones": "Solo CPU_BOUND e IO_BOUND. Entero > 0",
+    "procesos[].cadaCiclosES": "Solo IO_BOUND. Cada cuántas instrucciones pide E/S",
+    "procesos[].duracionES": "Solo IO_BOUND. Ciclos que dura cada E/S (la atiende el DMA sin ocupar la CPU)",
+    "procesos[].buffer": "Solo PRODUCTOR y CONSUMIDOR. Nombre de un buffer definido en 'buffers'",
+    "procesos[].ciclosPorElemento": "Solo PRODUCTOR y CONSUMIDOR. Ciclos de cálculo para producir o consumir un elemento",
+    "procesos[].elementos": "Solo PRODUCTOR y CONSUMIDOR. Elementos que debe procesar para terminar (sus instrucciones se calculan solas: elementos x (ciclosPorElemento + 5))"
   },
+  "debugger": true,
+  "simulacion": {
+    "duracionCicloMs": 500,
+    "maxCiclos": 200,
+    "latenciaRed": 2,
+    "envejecimientoCadaCiclos": 10
+  },
+  "computadores": [
+    { "ram": 1024, "politica": "FCFS", "quantum": 3 },
+    { "ram": 512, "politica": "ROUND_ROBIN", "quantum": 4 },
+    { "ram": 768, "politica": "PRIORIDADES", "quantum": 3 }
+  ],
+  "buffers": [
+    { "nombre": "B1", "capacidad": 5, "computador": 0 },
+    { "nombre": "B2", "capacidad": 3, "computador": 2 }
+  ],
   "procesos": [
     {
       "nombre": "Calculadora",
@@ -20,8 +55,8 @@
       "prioridad": 3,
       "memoria": 120,
       "deadline": 150,
-      "instrucciones": 60,
-      "computador": 0
+      "computador": 0,
+      "instrucciones": 60
     },
     {
       "nombre": "Impresora",
@@ -29,10 +64,10 @@
       "prioridad": 6,
       "memoria": 80,
       "deadline": 300,
+      "computador": 1,
       "instrucciones": 40,
       "cadaCiclosES": 5,
-      "duracionES": 8,
-      "computador": 1
+      "duracionES": 8
     },
     {
       "nombre": "Sensor",
@@ -40,10 +75,21 @@
       "prioridad": 2,
       "memoria": 60,
       "deadline": 400,
+      "computador": 0,
       "buffer": "B1",
       "ciclosPorElemento": 3,
-      "elementos": 10,
-      "computador": -1
+      "elementos": 10
+    },
+    {
+      "nombre": "Monitor",
+      "tipo": "CONSUMIDOR",
+      "prioridad": 4,
+      "memoria": 60,
+      "deadline": 400,
+      "computador": -1,
+      "buffer": "B1",
+      "ciclosPorElemento": 2,
+      "elementos": 10
     }
   ]
 }

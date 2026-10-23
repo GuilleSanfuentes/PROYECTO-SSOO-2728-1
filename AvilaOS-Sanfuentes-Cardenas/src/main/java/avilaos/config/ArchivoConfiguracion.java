@@ -1,11 +1,16 @@
 package avilaos.config;
 
+import avilaos.enums.PoliticaTipo;
 import avilaos.estructuras.ListaEnlazada;
+import avilaos.estructuras.Nodo;
+import avilaos.hardware.Reloj;
 import avilaos.log.Debug;
 import avilaos.so.DatosProceso;
+import avilaos.so.FabricaProcesos;
+import avilaos.sync.DatosBuffer;
 import com.google.gson.Gson;
-import com.google.gson.JsonArray;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
@@ -22,12 +27,27 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.concurrent.Semaphore;
 
-/** Lectura y escritura del archivo JSON de configuración. */
+/** Lectura, validación y escritura del archivo JSON de configuración del sistema. */
 public final class ArchivoConfiguracion {
 
-    public static final String RUTA_POR_DEFECTO = "config/avilaos.json";
+    public static final String RUTA_POR_DEFECTO = "config/avilaosconfigs.json";
+
     public static final String CLAVE_DEBUGGER = "debugger";
+    public static final String CLAVE_SIMULACION = "simulacion";
+    public static final String CLAVE_DURACION = "duracionCicloMs";
+    public static final String CLAVE_MAX_CICLOS = "maxCiclos";
+    public static final String CLAVE_LATENCIA = "latenciaRed";
+    public static final String CLAVE_ENVEJECIMIENTO = "envejecimientoCadaCiclos";
+    public static final String CLAVE_COMPUTADORES = "computadores";
+    public static final String CLAVE_BUFFERS = "buffers";
     public static final String CLAVE_PROCESOS = "procesos";
+
+    private static final String[] CLAVES_RAIZ = {CLAVE_DEBUGGER, CLAVE_SIMULACION, CLAVE_COMPUTADORES, CLAVE_BUFFERS, CLAVE_PROCESOS};
+    private static final String[] CLAVES_SIMULACION = {CLAVE_DURACION, CLAVE_MAX_CICLOS, CLAVE_LATENCIA, CLAVE_ENVEJECIMIENTO};
+    private static final String[] CLAVES_COMPUTADOR = {"ram", "politica", "quantum"};
+    private static final String[] CLAVES_BUFFER = {"nombre", "capacidad", "computador"};
+    private static final String[] CLAVES_PROCESO = {"nombre", "tipo", "prioridad", "memoria", "deadline", "computador",
+        "instrucciones", "cadaCiclosES", "duracionES", "buffer", "ciclosPorElemento", "elementos"};
 
     private static final String ORIGEN = "Config";
     private static final Semaphore acceso = new Semaphore(1);
@@ -43,7 +63,7 @@ public final class ArchivoConfiguracion {
         try {
             config = leerSinMensajes(ruta);
         } catch (IOException | JsonParseException e) {
-            config = valoresPorDefecto();
+            config = new JsonObject();
             fallo = "no se pudo leer " + ruta + ": " + e.getMessage();
         }
         Boolean valor = interpretarBooleano(config.get(CLAVE_DEBUGGER));
@@ -58,63 +78,30 @@ public final class ArchivoConfiguracion {
         }
     }
 
-    /** Lee el archivo completo; si no existe lo crea con valores por defecto. */
-    public static JsonObject leer(String ruta) {
-        try {
-            JsonObject config = leerSinMensajes(ruta);
-            Debug.ok(ORIGEN, "leído " + ruta);
-            return config;
-        } catch (IOException | JsonParseException e) {
-            Debug.error(ORIGEN, "no se pudo leer " + ruta + ": " + e.getMessage() + "; se usan valores por defecto");
-            return valoresPorDefecto();
-        }
-    }
-
-    /** Lee la lista "procesos" de un JSON; los elementos ilegibles se informan y se omiten. */
-    public static ListaEnlazada<DatosProceso> leerProcesos(String ruta) {
-        ListaEnlazada<DatosProceso> procesos = new ListaEnlazada<>();
+    /** Lee y valida toda la configuración. Lo inválido se informa y se reemplaza u omite; nunca detiene el programa. */
+    public static ConfiguracionSistema cargar(String ruta) {
         JsonObject raiz;
-        acceso.acquireUninterruptibly();
-        try (Reader lector = Files.newBufferedReader(Paths.get(ruta), StandardCharsets.UTF_8)) {
-            JsonElement elemento = JsonParser.parseReader(lector);
-            if (!elemento.isJsonObject()) {
-                Debug.error(ORIGEN, ruta + ": la raíz no es un objeto JSON");
-                return procesos;
-            }
-            raiz = elemento.getAsJsonObject();
+        try {
+            raiz = leerSinMensajes(ruta);
         } catch (IOException | JsonParseException e) {
-            Debug.error(ORIGEN, "no se pudo leer " + ruta + ": " + e.getMessage());
-            return procesos;
-        } finally {
-            acceso.release();
+            Debug.error(ORIGEN, "no se pudo leer " + ruta + ": " + e.getMessage() + "; se usa la configuración por defecto");
+            return ConfiguracionSistema.porDefecto();
         }
-        if (!raiz.has(CLAVE_PROCESOS) || !raiz.get(CLAVE_PROCESOS).isJsonArray()) {
-            Debug.error(ORIGEN, ruta + ": falta la lista '" + CLAVE_PROCESOS + "'");
-            return procesos;
+        ConfiguracionSistema config = new Lector(ruta).interpretar(raiz);
+        if (config.getErroresCarga() == 0) {
+            Debug.ok(ORIGEN, ruta + " cargado sin errores");
+        } else {
+            Debug.error(ORIGEN, ruta + " cargado con " + config.getErroresCarga() + " valores inválidos (reemplazados u omitidos)");
         }
-        JsonArray lista = raiz.getAsJsonArray(CLAVE_PROCESOS);
-        for (int i = 0; i < lista.size(); i++) {
-            try {
-                DatosProceso datos = GSON.fromJson(lista.get(i), DatosProceso.class);
-                if (datos == null || datos.tipo() == null) {
-                    Debug.error(ORIGEN, ruta + ": proceso #" + i + " sin tipo válido, se omite");
-                } else {
-                    procesos.agregarFinal(datos);
-                }
-            } catch (JsonParseException e) {
-                Debug.error(ORIGEN, ruta + ": proceso #" + i + " ilegible (" + e.getMessage() + "), se omite");
-            }
-        }
-        Debug.ok(ORIGEN, "leídos " + procesos.tamano() + " de " + lista.size() + " procesos de " + ruta);
-        return procesos;
+        return config;
     }
 
-    /** Guarda la configuración de forma atómica: escribe un temporal y lo renombra. */
-    public static boolean guardar(String ruta, JsonObject config) {
+    /** Guarda la configuración en el archivo de forma atómica. */
+    public static boolean guardarConfiguracion(ConfiguracionSistema config, String ruta) {
         acceso.acquireUninterruptibly();
         try {
-            escribirAtomico(Paths.get(ruta), config);
-            Debug.ok(ORIGEN, "guardado " + ruta);
+            escribirAtomico(Paths.get(ruta), aJson(config));
+            Debug.ok(ORIGEN, "configuración guardada en " + ruta);
             return true;
         } catch (IOException e) {
             Debug.error(ORIGEN, "no se pudo guardar " + ruta + ": " + e.getMessage());
@@ -124,11 +111,74 @@ public final class ArchivoConfiguracion {
         }
     }
 
-    /** Configuración mínima usada cuando no hay archivo o es inválido. */
-    public static JsonObject valoresPorDefecto() {
-        JsonObject config = new JsonObject();
-        config.addProperty(CLAVE_DEBUGGER, true);
-        return config;
+    /** Convierte la configuración al formato JSON del archivo; cada proceso solo con los campos de su tipo. */
+    public static JsonObject aJson(ConfiguracionSistema config) {
+        JsonObject raiz = new JsonObject();
+        raiz.addProperty(CLAVE_DEBUGGER, config.isDebugger());
+        JsonObject simulacion = new JsonObject();
+        simulacion.addProperty(CLAVE_DURACION, config.getDuracionCicloMs());
+        simulacion.addProperty(CLAVE_MAX_CICLOS, config.getMaxCiclos());
+        simulacion.addProperty(CLAVE_LATENCIA, config.getLatenciaRed());
+        simulacion.addProperty(CLAVE_ENVEJECIMIENTO, config.getEnvejecimientoCadaCiclos());
+        raiz.add(CLAVE_SIMULACION, simulacion);
+
+        JsonArray computadores = new JsonArray();
+        Nodo<ConfigComputador> c = config.getComputadores().getCabeza();
+        while (c != null) {
+            JsonObject obj = new JsonObject();
+            obj.addProperty("ram", c.getDato().ram());
+            obj.addProperty("politica", c.getDato().politica().name());
+            obj.addProperty("quantum", c.getDato().quantum());
+            computadores.add(obj);
+            c = c.getSiguiente();
+        }
+        raiz.add(CLAVE_COMPUTADORES, computadores);
+
+        JsonArray buffers = new JsonArray();
+        Nodo<DatosBuffer> b = config.getBuffers().getCabeza();
+        while (b != null) {
+            JsonObject obj = new JsonObject();
+            obj.addProperty("nombre", b.getDato().nombre());
+            obj.addProperty("capacidad", b.getDato().capacidad());
+            obj.addProperty("computador", b.getDato().computador());
+            buffers.add(obj);
+            b = b.getSiguiente();
+        }
+        raiz.add(CLAVE_BUFFERS, buffers);
+
+        JsonArray procesos = new JsonArray();
+        Nodo<DatosProceso> p = config.getProcesos().getCabeza();
+        while (p != null) {
+            procesos.add(procesoAJson(p.getDato()));
+            p = p.getSiguiente();
+        }
+        raiz.add(CLAVE_PROCESOS, procesos);
+        return raiz;
+    }
+
+    /** Un proceso con solo los campos que usa su tipo. */
+    private static JsonObject procesoAJson(DatosProceso d) {
+        JsonObject obj = new JsonObject();
+        obj.addProperty("nombre", d.nombre());
+        obj.addProperty("tipo", d.tipo().name());
+        obj.addProperty("prioridad", d.prioridad());
+        obj.addProperty("memoria", d.memoria());
+        obj.addProperty("deadline", d.deadline());
+        obj.addProperty("computador", d.computador());
+        switch (d.tipo()) {
+            case CPU_BOUND -> obj.addProperty("instrucciones", d.instrucciones());
+            case IO_BOUND -> {
+                obj.addProperty("instrucciones", d.instrucciones());
+                obj.addProperty("cadaCiclosES", d.cadaCiclosES());
+                obj.addProperty("duracionES", d.duracionES());
+            }
+            case PRODUCTOR, CONSUMIDOR -> {
+                obj.addProperty("buffer", d.buffer());
+                obj.addProperty("ciclosPorElemento", d.ciclosPorElemento());
+                obj.addProperty("elementos", d.elementos());
+            }
+        }
+        return obj;
     }
 
     /** Acepta true/false o los textos "TRUE"/"FALSE" sin distinguir mayúsculas; si no, devuelve null. */
@@ -158,13 +208,13 @@ public final class ArchivoConfiguracion {
         try {
             Path archivo = Paths.get(ruta);
             if (!Files.exists(archivo)) {
-                JsonObject porDefecto = valoresPorDefecto();
+                JsonObject porDefecto = aJson(ConfiguracionSistema.porDefecto());
                 escribirAtomico(archivo, porDefecto);
                 return porDefecto;
             }
             try (Reader lector = Files.newBufferedReader(archivo, StandardCharsets.UTF_8)) {
                 JsonElement raiz = JsonParser.parseReader(lector);
-                if (!raiz.isJsonObject()) {
+                if (raiz == null || !raiz.isJsonObject()) {
                     throw new JsonParseException("la raíz del archivo no es un objeto JSON");
                 }
                 return raiz.getAsJsonObject();
@@ -188,6 +238,240 @@ public final class ArchivoConfiguracion {
             Files.move(temporal, archivo, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (AtomicMoveNotSupportedException e) {
             Files.move(temporal, archivo, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    /** Interpreta el JSON campo por campo, contando los valores inválidos. */
+    private static final class Lector {
+
+        private final String ruta;
+        private int errores;
+
+        Lector(String ruta) {
+            this.ruta = ruta;
+        }
+
+        ConfiguracionSistema interpretar(JsonObject raiz) {
+            claves(raiz, CLAVES_RAIZ, "raíz");
+            Boolean debugger = interpretarBooleano(raiz.get(CLAVE_DEBUGGER));
+            if (debugger == null) {
+                error(CLAVE_DEBUGGER + " falta o no es TRUE/FALSE, se usa TRUE");
+                debugger = true;
+            }
+            JsonObject simulacion = objeto(raiz, CLAVE_SIMULACION);
+            claves(simulacion, CLAVES_SIMULACION, CLAVE_SIMULACION);
+            int duracion = entero(simulacion, CLAVE_DURACION, 0, Reloj.DURACION_MAXIMA_MS,
+                    ConfiguracionSistema.DEF_DURACION_MS, CLAVE_SIMULACION);
+            int maxCiclos = entero(simulacion, CLAVE_MAX_CICLOS, 0, Integer.MAX_VALUE,
+                    ConfiguracionSistema.DEF_MAX_CICLOS, CLAVE_SIMULACION);
+            int latencia = entero(simulacion, CLAVE_LATENCIA, 0, ConfiguracionSistema.MAX_LATENCIA,
+                    ConfiguracionSistema.DEF_LATENCIA, CLAVE_SIMULACION);
+            int envejecimiento = entero(simulacion, CLAVE_ENVEJECIMIENTO, 0, ConfiguracionSistema.MAX_ENVEJECIMIENTO,
+                    ConfiguracionSistema.DEF_ENVEJECIMIENTO, CLAVE_SIMULACION);
+
+            ListaEnlazada<ConfigComputador> computadores = leerComputadores(arreglo(raiz, CLAVE_COMPUTADORES));
+            ListaEnlazada<DatosBuffer> buffers = leerBuffers(arreglo(raiz, CLAVE_BUFFERS), computadores.tamano());
+            ListaEnlazada<DatosProceso> procesos = leerProcesos(arreglo(raiz, CLAVE_PROCESOS), computadores.tamano(), buffers);
+            return new ConfiguracionSistema(debugger, duracion, maxCiclos, latencia, envejecimiento,
+                    computadores, buffers, procesos, errores);
+        }
+
+        private ListaEnlazada<ConfigComputador> leerComputadores(JsonArray lista) {
+            ListaEnlazada<ConfigComputador> computadores = new ListaEnlazada<>();
+            for (int i = 0; i < lista.size(); i++) {
+                String contexto = CLAVE_COMPUTADORES + "[" + i + "]";
+                if (i >= ConfiguracionSistema.MAX_COMPUTADORES) {
+                    error(contexto + " supera el máximo de " + ConfiguracionSistema.MAX_COMPUTADORES + " computadores, se omite");
+                    continue;
+                }
+                JsonObject obj = comoObjeto(lista.get(i), contexto);
+                claves(obj, CLAVES_COMPUTADOR, contexto);
+                int ram = entero(obj, "ram", 1, ConfiguracionSistema.MAX_RAM, ConfiguracionSistema.DEF_RAM, contexto);
+                PoliticaTipo politica = politica(obj, contexto);
+                int quantum = entero(obj, "quantum", 1, ConfiguracionSistema.MAX_QUANTUM, ConfiguracionSistema.DEF_QUANTUM, contexto);
+                computadores.agregarFinal(new ConfigComputador(ram, politica, quantum));
+            }
+            while (computadores.tamano() < ConfiguracionSistema.MIN_COMPUTADORES) {
+                error("hay " + computadores.tamano() + " computadores; el mínimo es " + ConfiguracionSistema.MIN_COMPUTADORES
+                        + ", se agrega uno por defecto");
+                computadores.agregarFinal(new ConfigComputador(ConfiguracionSistema.DEF_RAM,
+                        ConfiguracionSistema.DEF_POLITICA, ConfiguracionSistema.DEF_QUANTUM));
+            }
+            return computadores;
+        }
+
+        private ListaEnlazada<DatosBuffer> leerBuffers(JsonArray lista, int cantidadComputadores) {
+            ListaEnlazada<DatosBuffer> buffers = new ListaEnlazada<>();
+            for (int i = 0; i < lista.size(); i++) {
+                String contexto = CLAVE_BUFFERS + "[" + i + "]";
+                JsonObject obj = comoObjeto(lista.get(i), contexto);
+                claves(obj, CLAVES_BUFFER, contexto);
+                String nombre = texto(obj, "nombre");
+                String problema = "";
+                if (nombre == null || nombre.isBlank()) {
+                    problema += " nombre vacío;";
+                } else if (buscarBuffer(buffers, nombre.trim()) != null) {
+                    problema += " nombre '" + nombre + "' repetido;";
+                }
+                Integer capacidad = enteroEstricto(obj, "capacidad", 1, ConfiguracionSistema.MAX_CAPACIDAD_BUFFER);
+                if (capacidad == null) {
+                    problema += " capacidad debe ser entero 1.." + ConfiguracionSistema.MAX_CAPACIDAD_BUFFER + ";";
+                }
+                Integer computador = enteroEstricto(obj, "computador", 0, cantidadComputadores - 1);
+                if (computador == null) {
+                    problema += " computador debe ser 0.." + (cantidadComputadores - 1) + ";";
+                }
+                if (!problema.isEmpty()) {
+                    error(contexto + " se omite:" + problema);
+                    continue;
+                }
+                buffers.agregarFinal(new DatosBuffer(nombre.trim(), capacidad, computador));
+            }
+            return buffers;
+        }
+
+        private ListaEnlazada<DatosProceso> leerProcesos(JsonArray lista, int cantidadComputadores, ListaEnlazada<DatosBuffer> buffers) {
+            ListaEnlazada<DatosProceso> procesos = new ListaEnlazada<>();
+            for (int i = 0; i < lista.size(); i++) {
+                String contexto = CLAVE_PROCESOS + "[" + i + "]";
+                JsonObject obj = comoObjeto(lista.get(i), contexto);
+                claves(obj, CLAVES_PROCESO, contexto);
+                DatosProceso datos;
+                try {
+                    datos = GSON.fromJson(obj, DatosProceso.class);
+                } catch (JsonParseException e) {
+                    error(contexto + " se omite: algún campo tiene un tipo de dato inválido (" + e.getMessage() + ")");
+                    continue;
+                }
+                if (datos == null || datos.tipo() == null) {
+                    error(contexto + " se omite: tipo inválido (CPU_BOUND, IO_BOUND, PRODUCTOR o CONSUMIDOR)");
+                    continue;
+                }
+                String problema = FabricaProcesos.validar(datos);
+                if (datos.computador() >= cantidadComputadores) {
+                    problema += " computador " + datos.computador() + " no existe (0.." + (cantidadComputadores - 1) + " o -1);";
+                }
+                if (datos.tipo().usaBuffer() && datos.buffer() != null && !datos.buffer().isBlank()
+                        && buscarBuffer(buffers, datos.buffer().trim()) == null) {
+                    problema += " buffer '" + datos.buffer() + "' no está definido en 'buffers';";
+                }
+                if (!problema.isEmpty()) {
+                    error(contexto + " '" + datos.nombre() + "' se omite:" + problema);
+                    continue;
+                }
+                procesos.agregarFinal(datos);
+            }
+            return procesos;
+        }
+
+        private DatosBuffer buscarBuffer(ListaEnlazada<DatosBuffer> buffers, String nombre) {
+            Nodo<DatosBuffer> nodo = buffers.getCabeza();
+            while (nodo != null) {
+                if (nodo.getDato().nombre().equals(nombre)) {
+                    return nodo.getDato();
+                }
+                nodo = nodo.getSiguiente();
+            }
+            return null;
+        }
+
+        private PoliticaTipo politica(JsonObject obj, String contexto) {
+            String valor = texto(obj, "politica");
+            if (valor == null) {
+                Debug.info(ORIGEN, contexto + ".politica no definida, se usa " + ConfiguracionSistema.DEF_POLITICA.name());
+                return ConfiguracionSistema.DEF_POLITICA;
+            }
+            for (PoliticaTipo tipo : PoliticaTipo.values()) {
+                if (tipo.name().equalsIgnoreCase(valor.trim())) {
+                    return tipo;
+                }
+            }
+            error(contexto + ".politica '" + valor + "' no existe (FCFS, EDF, ROUND_ROBIN, PRIORIDADES), se usa "
+                    + ConfiguracionSistema.DEF_POLITICA.name());
+            return ConfiguracionSistema.DEF_POLITICA;
+        }
+
+        private int entero(JsonObject obj, String clave, int min, int max, int defecto, String contexto) {
+            if (!obj.has(clave)) {
+                Debug.info(ORIGEN, contexto + "." + clave + " no definido, se usa " + defecto);
+                return defecto;
+            }
+            Integer valor = enteroEstricto(obj, clave, min, max);
+            if (valor == null) {
+                error(contexto + "." + clave + " = " + obj.get(clave) + " inválido (entero " + min + ".." + max + "), se usa " + defecto);
+                return defecto;
+            }
+            return valor;
+        }
+
+        private Integer enteroEstricto(JsonObject obj, String clave, int min, int max) {
+            JsonElement elemento = obj.get(clave);
+            if (elemento == null || !elemento.isJsonPrimitive() || !elemento.getAsJsonPrimitive().isNumber()) {
+                return null;
+            }
+            double valor = elemento.getAsDouble();
+            if (valor != Math.rint(valor) || valor < min || valor > max) {
+                return null;
+            }
+            return (int) valor;
+        }
+
+        private String texto(JsonObject obj, String clave) {
+            JsonElement elemento = obj.get(clave);
+            if (elemento == null || !elemento.isJsonPrimitive() || !elemento.getAsJsonPrimitive().isString()) {
+                return null;
+            }
+            return elemento.getAsString();
+        }
+
+        private JsonObject objeto(JsonObject padre, String clave) {
+            JsonElement elemento = padre.get(clave);
+            if (elemento == null) {
+                Debug.info(ORIGEN, "sección '" + clave + "' no definida, se usan valores por defecto");
+                return new JsonObject();
+            }
+            return comoObjeto(elemento, clave);
+        }
+
+        private JsonArray arreglo(JsonObject padre, String clave) {
+            JsonElement elemento = padre.get(clave);
+            if (elemento == null) {
+                Debug.info(ORIGEN, "lista '" + clave + "' no definida, queda vacía");
+                return new JsonArray();
+            }
+            if (!elemento.isJsonArray()) {
+                error("'" + clave + "' debe ser una lista [ ... ], queda vacía");
+                return new JsonArray();
+            }
+            return elemento.getAsJsonArray();
+        }
+
+        private JsonObject comoObjeto(JsonElement elemento, String contexto) {
+            if (elemento == null || !elemento.isJsonObject()) {
+                error(contexto + " debe ser un objeto { ... }, se usan valores por defecto");
+                return new JsonObject();
+            }
+            return elemento.getAsJsonObject();
+        }
+
+        private void claves(JsonObject obj, String[] permitidas, String contexto) {
+            for (String clave : obj.keySet()) {
+                if (clave.startsWith("_")) {
+                    continue;
+                }
+                boolean conocida = false;
+                for (String permitida : permitidas) {
+                    conocida |= permitida.equals(clave);
+                }
+                if (!conocida) {
+                    error(contexto + ": clave desconocida '" + clave + "' (se ignora; ¿error de escritura?)");
+                }
+            }
+        }
+
+        private void error(String mensaje) {
+            errores++;
+            Debug.error(ORIGEN, ruta + ": " + mensaje);
         }
     }
 }

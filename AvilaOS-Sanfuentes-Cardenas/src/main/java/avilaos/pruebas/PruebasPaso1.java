@@ -1,5 +1,7 @@
 package avilaos.pruebas;
 
+import avilaos.config.ArchivoConfiguracion;
+import avilaos.config.ConfiguracionSistema;
 import avilaos.enums.EstadoProceso;
 import avilaos.enums.ModoCPU;
 import avilaos.enums.MotivoBloqueo;
@@ -10,6 +12,10 @@ import avilaos.estructuras.Comparador;
 import avilaos.estructuras.ListaEnlazada;
 import avilaos.log.Debug;
 import avilaos.log.LogEventos;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 /** Pruebas de terminal de la etapa 1: estructuras, enums y log. */
 public final class PruebasPaso1 {
@@ -36,7 +42,60 @@ public final class PruebasPaso1 {
         probarErroresControlados();
         probarEnums();
         probarLog(log);
+        probarConfiguracion();
         r.cerrar();
+    }
+
+    /** El archivo real carga sin errores; uno inválido usa valores por defecto; guardar y releer conserva todo. */
+    private static void probarConfiguracion() {
+        r.grupo("Configuración del sistema (avilaosconfigs.json)");
+        ConfiguracionSistema real = ArchivoConfiguracion.cargar(ArchivoConfiguracion.RUTA_POR_DEFECTO);
+        r.verificar("avilaosconfigs.json carga sin errores", real.getErroresCarga() == 0,
+                real.getErroresCarga() + " valores inválidos");
+        r.verificar("tiene al menos 2 computadores", real.getComputadores().tamano() >= ConfiguracionSistema.MIN_COMPUTADORES,
+                String.valueOf(real.getComputadores().tamano()));
+        try {
+            Path carpeta = Files.createTempDirectory("avilaos-pruebas");
+            Path invalido = carpeta.resolve("invalido.json");
+            Files.writeString(invalido, """
+                    {
+                      "debugger": true,
+                      "simulacion": { "duracionCicloMs": -3, "latenciaRed": 2.5, "duracionCiclo": 100 },
+                      "computadores": [ { "ram": 0, "politica": "SJF", "quantum": 3 } ],
+                      "buffers": [ { "nombre": "B1", "capacidad": 5, "computador": 9 } ],
+                      "procesos": [
+                        { "nombre": "x", "tipo": "CPU_BOUND", "prioridad": 20, "memoria": 10, "deadline": 10, "instrucciones": 5 },
+                        { "nombre": "y", "tipo": "PRODUCTOR", "prioridad": 2, "memoria": 10, "deadline": 10,
+                          "buffer": "B7", "ciclosPorElemento": 1, "elementos": 1 }
+                      ]
+                    }
+                    """, StandardCharsets.UTF_8);
+            Debug.info(ORIGEN, "las líneas ERROR siguientes de Config son provocadas a propósito (archivo inválido)");
+            ConfiguracionSistema mala = ArchivoConfiguracion.cargar(invalido.toString());
+            r.verificar("valores inválidos se reemplazan por los de defecto", mala.getDuracionCicloMs() == ConfiguracionSistema.DEF_DURACION_MS
+                    && mala.getLatenciaRed() == ConfiguracionSistema.DEF_LATENCIA
+                    && mala.getComputadores().primero().ram() == ConfiguracionSistema.DEF_RAM
+                    && mala.getComputadores().primero().politica() == ConfiguracionSistema.DEF_POLITICA, mala.describir());
+            r.verificar("se completa el mínimo de 2 computadores", mala.getComputadores().tamano() == 2,
+                    String.valueOf(mala.getComputadores().tamano()));
+            r.verificar("buffer y procesos inválidos se omiten", mala.getBuffers().estaVacia() && mala.getProcesos().estaVacia(),
+                    mala.describir());
+            r.verificar("cuenta los 9 valores inválidos", mala.getErroresCarga() == 9, String.valueOf(mala.getErroresCarga()));
+
+            Path copia = carpeta.resolve("copia.json");
+            boolean dl = Debug.isActivo();
+            Debug.setActivo(false);
+            boolean guardado = ArchivoConfiguracion.guardarConfiguracion(real, copia.toString());
+            ConfiguracionSistema releida = ArchivoConfiguracion.cargar(copia.toString());
+            Debug.setActivo(dl);
+            r.verificar("guardar y volver a leer conserva toda la configuración", guardado
+                    && releida.getErroresCarga() == 0 && releida.describir().equals(real.describir()), releida.describir());
+            Files.deleteIfExists(invalido);
+            Files.deleteIfExists(copia);
+            Files.deleteIfExists(carpeta);
+        } catch (IOException e) {
+            r.verificar("archivos temporales de prueba", false, e.getMessage());
+        }
     }
 
     /** Agregar, insertar, obtener y eliminar en la lista. */

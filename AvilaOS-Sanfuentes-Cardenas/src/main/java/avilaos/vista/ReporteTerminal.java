@@ -1,9 +1,13 @@
 package avilaos.vista;
 
+import avilaos.config.ConfiguracionSistema;
 import avilaos.enums.EstadoProceso;
 import avilaos.enums.MotivoBloqueo;
 import avilaos.estructuras.ListaEnlazada;
 import avilaos.estructuras.Nodo;
+import avilaos.hardware.CPU;
+import avilaos.hardware.ControladorEspera;
+import avilaos.hardware.RAM;
 import avilaos.log.Debug;
 import avilaos.so.DatosProceso;
 import avilaos.so.PCB;
@@ -23,8 +27,8 @@ public final class ReporteTerminal {
     }
 
     /** Imprime el resumen de una etapa: lo que se hizo y el estado de cada proceso. */
-    public static void resumenEtapa(int etapa, String titulo, ListaEnlazada<String> hechos, ListaEnlazada<PCB> procesos,
-            int correctas, int fallidas) {
+    public static void resumenEtapa(int etapa, String titulo, ListaEnlazada<String> hechos, ListaEnlazada<String> secciones,
+            ListaEnlazada<PCB> procesos, int correctas, int fallidas) {
         if (!Debug.isActivo()) {
             return;
         }
@@ -40,12 +44,30 @@ public final class ReporteTerminal {
             hecho = hecho.getSiguiente();
         }
         sb.append('\n');
+        Nodo<String> seccion = secciones.getCabeza();
+        while (seccion != null) {
+            sb.append(seccion.getDato()).append('\n');
+            seccion = seccion.getSiguiente();
+        }
+        if (!secciones.estaVacia()) {
+            sb.append('\n');
+        }
         sb.append(tablaProcesos(procesos));
         sb.append('\n');
         sb.append(" Listo: ").append(AvanceProyecto.listos(etapa)).append('\n');
         sb.append(" Falta: ").append(AvanceProyecto.faltan(etapa)).append('\n');
         sb.append(separador());
         Debug.bloque(sb.toString());
+    }
+
+    /** Imprime la configuración cargada, entre separadores. */
+    public static void resumenConfiguracion(String ruta, ConfiguracionSistema config) {
+        if (!Debug.isActivo()) {
+            return;
+        }
+        Debug.bloque(separador() + "\n CONFIGURACIÓN CARGADA DE " + ruta
+                + (config.getErroresCarga() == 0 ? "  -  SIN ERRORES" : "  -  " + config.getErroresCarga() + " VALORES INVÁLIDOS")
+                + "\n" + separador() + "\n" + config.describir() + separador());
     }
 
     /** Conteo por estado y una fila por proceso con barras de progreso y de deadline. */
@@ -88,6 +110,29 @@ public final class ReporteTerminal {
                 barra(p.getPc(), total) + " " + p.getPc() + "/" + total,
                 barra(p.getDeadlineRestante(), p.getDeadlineInicial()) + " " + p.getDeadlineRestante() + "/" + p.getDeadlineInicial(),
                 bloqueo);
+    }
+
+    /** Estado de la CPU: modo, proceso cargado, registros y uso. */
+    public static String lineaCPU(CPU cpu) {
+        long total = cpu.getCiclosUsuario() + cpu.getCiclosSO() + cpu.getCiclosOciosos();
+        String proceso = cpu.getIdProceso() == CPU.SIN_PROCESO ? "ninguno" : cpu.getEtiquetaProceso() + " PC=" + cpu.getPc() + " MAR=" + cpu.getMar();
+        return String.format(" %-10s modo=%-17s proceso=%-22s uso %s %5.1f%%  (usuario %d, SO %d, ociosa %d de %d ciclos)",
+                cpu.getNombre(), cpu.isOciosa() ? "ociosa" : cpu.getModo().getNombre(), proceso,
+                barra((int) (cpu.getCiclosUsuario() + cpu.getCiclosSO()), (int) total), cpu.getUtilizacion(),
+                cpu.getCiclosUsuario(), cpu.getCiclosSO(), cpu.getCiclosOciosos(), total);
+    }
+
+    /** Ocupación de la RAM con barra. */
+    public static String lineaRAM(RAM ram) {
+        int usada = ram.getUsada();
+        return String.format(" %-10s %s %d/%d usada, %d libre", ram.getNombre(), barra(usada, ram.getCapacidad()),
+                usada, ram.getCapacidad(), ram.getCapacidad() - usada);
+    }
+
+    /** Operaciones en curso y completadas de un DMA o tarjeta de red. */
+    public static String lineaDispositivo(ControladorEspera dispositivo) {
+        return String.format(" %-10s en curso %s, completadas %d", dispositivo.getNombre(),
+                dispositivo.describirPendientes(), dispositivo.getCompletadas());
     }
 
     /** Barra del tipo [#####.......] proporcional a actual/total. */

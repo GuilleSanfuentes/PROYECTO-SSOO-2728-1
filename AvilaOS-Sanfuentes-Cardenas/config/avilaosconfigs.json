@@ -1,0 +1,60 @@
+{
+  "debugger": true,
+  "simulacion": {
+    "duracionCicloMs": 500,
+    "maxCiclos": 0,
+    "latenciaRed": 2,
+    "envejecimientoCadaCiclos": 10
+  },
+  "computadores": [
+    { "ram": 1024, "politica": "FCFS", "quantum": 3 },
+    { "ram": 512, "politica": "ROUND_ROBIN", "quantum": 3 }
+  ],
+  "buffers": [
+    { "nombre": "B1", "capacidad": 5, "computador": 0 }
+  ],
+  "procesos": [
+    {
+      "nombre": "Calculadora",
+      "tipo": "CPU_BOUND",
+      "prioridad": 3,
+      "memoria": 120,
+      "deadline": 150,
+      "computador": 0,
+      "instrucciones": 60
+    },
+    {
+      "nombre": "Impresora",
+      "tipo": "IO_BOUND",
+      "prioridad": 6,
+      "memoria": 80,
+      "deadline": 300,
+      "computador": 1,
+      "instrucciones": 40,
+      "cadaCiclosES": 5,
+      "duracionES": 8
+    },
+    {
+      "nombre": "Sensor",
+      "tipo": "PRODUCTOR",
+      "prioridad": 2,
+      "memoria": 60,
+      "deadline": 400,
+      "computador": 0,
+      "buffer": "B1",
+      "ciclosPorElemento": 3,
+      "elementos": 10
+    },
+    {
+      "nombre": "Monitor",
+      "tipo": "CONSUMIDOR",
+      "prioridad": 4,
+      "memoria": 60,
+      "deadline": 400,
+      "computador": 1,
+      "buffer": "B1",
+      "ciclosPorElemento": 2,
+      "elementos": 10
+    }
+  ]
+}
