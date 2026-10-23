@@ -4,6 +4,11 @@
 
 package avilaos;
 
+import avilaos.config.ArchivoConfiguracion;
+import avilaos.log.Debug;
+import avilaos.log.LogEventos;
+import avilaos.pruebas.PruebasPaso1;
+
 /**
  *
  * @author guill
@@ -11,6 +16,9 @@ package avilaos;
 public class AvilaOSSanfuentesCardenas {
 
     public static void main(String[] args) {
-        System.out.println("Hello World!");
+        ArchivoConfiguracion.aplicarDebugger(ArchivoConfiguracion.RUTA_POR_DEFECTO);
+        LogEventos log = new LogEventos(LogEventos.CAPACIDAD_POR_DEFECTO);
+        Debug.setLog(log);
+        PruebasPaso1.ejecutar(log);
     }
 }
