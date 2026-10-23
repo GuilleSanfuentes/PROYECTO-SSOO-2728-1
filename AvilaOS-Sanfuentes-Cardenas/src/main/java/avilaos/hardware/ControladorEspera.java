@@ -71,6 +71,31 @@ public abstract class ControladorEspera implements ComponenteReloj {
         }
     }
 
+    /** Cancela las operaciones en curso del proceso (ej. terminado por deadline). Devuelve cuántas canceló. */
+    public int cancelar(int idProceso) {
+        int canceladas = 0;
+        mutex.acquireUninterruptibly();
+        try {
+            ListaEnlazada<OperacionEspera> siguen = new ListaEnlazada<>();
+            Nodo<OperacionEspera> nodo = operaciones.getCabeza();
+            while (nodo != null) {
+                if (nodo.getDato().idProceso == idProceso) {
+                    canceladas++;
+                } else {
+                    siguen.agregarFinal(nodo.getDato());
+                }
+                nodo = nodo.getSiguiente();
+            }
+            operaciones = siguen;
+        } finally {
+            mutex.release();
+        }
+        if (canceladas > 0) {
+            Debug.ok(nombre, "canceladas " + canceladas + " operaciones del proceso " + idProceso);
+        }
+        return canceladas;
+    }
+
     @Override
     public String getNombre() {
         return nombre;

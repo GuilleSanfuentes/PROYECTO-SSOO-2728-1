@@ -142,7 +142,7 @@ public class PCB {
         return cambiarEstado(EstadoProceso.LISTO);
     }
 
-    /** Pasa a Ejecución; registra la primera ejecución y restaura la prioridad envejecida. */
+    /** Pasa a Ejecución y registra la primera ejecución. Conserva la prioridad envejecida mientras está en CPU. */
     public boolean despachar(long ciclo) {
         if (!cambiarEstado(EstadoProceso.EJECUCION)) {
             return false;
@@ -150,9 +150,14 @@ public class PCB {
         if (cicloPrimeraEjecucion < 0) {
             cicloPrimeraEjecucion = ciclo;
         }
-        prioridadEfectiva = prioridadBase;
         ciclosEsperandoEnListos = 0;
         return true;
+    }
+
+    /** Vuelve a la prioridad base al salir de la CPU sin terminar (expulsión o bloqueo). */
+    public void restaurarPrioridad() {
+        prioridadEfectiva = prioridadBase;
+        ciclosEsperandoEnListos = 0;
     }
 
     /** Pasa a Terminado; porDeadline indica si fue por vencimiento del deadline. */

@@ -118,7 +118,9 @@ public final class PruebasPaso2 {
         }
         r.verificar("envejecimiento: 3 -> 1 y se detiene", mejoras == 2 && pcb.getPrioridadEfectiva() == 1, pcb.toString());
         pcb.despachar(100);
-        r.verificar("al despachar recupera su prioridad base", pcb.getPrioridadEfectiva() == 3, pcb.toString());
+        r.verificar("en CPU conserva la prioridad envejecida", pcb.getPrioridadEfectiva() == 1, pcb.toString());
+        pcb.restaurarPrioridad();
+        r.verificar("al salir de la CPU recupera su prioridad base", pcb.getPrioridadEfectiva() == 3, pcb.toString());
         r.verificar("termina por deadline vencido", pcb.terminar(100, true) && pcb.isDeadlineVencido(), pcb.toString());
 
         PCB envejecido = r.registrar(FabricaProcesos.crear(DatosProceso.cpuBound("viejo", 8, 10, 300, 30, 0), 0));

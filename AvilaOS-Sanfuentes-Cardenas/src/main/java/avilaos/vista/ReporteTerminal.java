@@ -1,6 +1,9 @@
 package avilaos.vista;
 
+import avilaos.cluster.Cluster;
+import avilaos.cluster.Computador;
 import avilaos.config.ConfiguracionSistema;
+import avilaos.so.Kernel;
 import avilaos.enums.EstadoProceso;
 import avilaos.enums.MotivoBloqueo;
 import avilaos.estructuras.ListaEnlazada;
@@ -58,6 +61,76 @@ public final class ReporteTerminal {
         sb.append(" Falta: ").append(AvanceProyecto.faltan(etapa)).append('\n');
         sb.append(separador());
         Debug.bloque(sb.toString());
+    }
+
+    /** Estado de todo el clúster al cerrar un ciclo: por computador, CPU, RAM y las cuatro colas. */
+    public static String estadoCiclo(Cluster cluster, long ciclo) {
+        StringBuilder sb = new StringBuilder();
+        int max = cluster.getMaxCiclos();
+        sb.append(separador()).append('\n');
+        sb.append(" CICLO ").append(ciclo).append(max > 0 ? " de " + max : "")
+                .append("  |  ").append(cluster.getReloj().getDuracionCicloMs()).append(" ms por ciclo")
+                .append(cluster.getReloj().isPausado() ? "  |  PAUSADO" : "").append('\n');
+        for (int i = 0; i < cluster.cantidadComputadores(); i++) {
+            Computador c = cluster.getComputador(i);
+            Kernel k = c.getKernel();
+            CPU cpu = c.getCpu();
+            RAM ram = c.getRam();
+            sb.append(String.format(" %s | %-26s | CPU: %-17s | RAM %s %d/%d%n", c.getNombre(), k.describirPlanificador(),
+                    cpu.isOciosa() ? "ociosa" : cpu.getModo().getNombre(), barra(ram.getUsada(), ram.getCapacidad()),
+                    ram.getUsada(), ram.getCapacidad()));
+            PCB actual = k.getEnEjecucion();
+            sb.append("   En CPU     ").append(actual == null ? "ninguno"
+                    : actual.getEtiqueta() + " '" + actual.getNombre() + "' Contador=" + cpu.getContador() + "/"
+                    + actual.getPrograma().totalInstrucciones() + " prio=" + actual.getPrioridadEfectiva()
+                    + " dl=" + actual.getDeadlineRestante() + " (" + k.getCiclosEnCPU() + " ciclos seguidos)")
+                    .append("  | última acción: ").append(cpu.getUltimaAccion()).append('\n');
+            sb.append("   Nuevos     ").append(listaCorta(k.getNuevos())).append('\n');
+            sb.append("   Listos     ").append(listaCorta(k.getListos())).append('\n');
+            sb.append("   Bloqueados ").append(listaCorta(k.getBloqueados())).append('\n');
+            sb.append("   Terminados ").append(listaCorta(k.getTerminados())).append('\n');
+        }
+        sb.append(separador());
+        return sb.toString();
+    }
+
+    /** Resumen final de la simulación: hardware de cada computador y tabla de todos los procesos. */
+    public static void resumenFinal(Cluster cluster) {
+        if (!Debug.isActivo()) {
+            return;
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append(separador()).append('\n');
+        sb.append(" SIMULACIÓN FINALIZADA EN EL CICLO ").append(cluster.getReloj().getCiclo()).append('\n');
+        sb.append(separador()).append('\n');
+        for (int i = 0; i < cluster.cantidadComputadores(); i++) {
+            Computador c = cluster.getComputador(i);
+            sb.append(" ").append(c.getNombre()).append(" (").append(c.getKernel().describirPlanificador()).append(")\n");
+            sb.append(lineaCPU(c.getCpu())).append('\n');
+            sb.append(lineaRAM(c.getRam())).append('\n');
+            sb.append(lineaDispositivo(c.getDma())).append('\n');
+        }
+        sb.append('\n').append(tablaProcesos(cluster.todosLosProcesos()));
+        sb.append(separador());
+        Debug.bloque(sb.toString());
+    }
+
+    /** Lista del tipo [P1-H1 p2 dl40, P5-H1 (E/S: 4 ciclos en DMA)]. */
+    private static String listaCorta(ListaEnlazada<PCB> procesos) {
+        StringBuilder sb = new StringBuilder("[");
+        Nodo<PCB> nodo = procesos.getCabeza();
+        while (nodo != null) {
+            PCB p = nodo.getDato();
+            sb.append(sb.length() > 1 ? ", " : "").append(p.getEtiqueta());
+            switch (p.getEstado()) {
+                case BLOQUEADO -> sb.append(" (").append(p.getMotivoBloqueo().getNombre())
+                        .append(p.getDetalleBloqueo().isEmpty() ? "" : ": " + p.getDetalleBloqueo()).append(')');
+                case TERMINADO -> sb.append(p.isDeadlineVencido() ? " (deadline)" : "");
+                default -> sb.append(" p").append(p.getPrioridadEfectiva()).append(" dl").append(p.getDeadlineRestante());
+            }
+            nodo = nodo.getSiguiente();
+        }
+        return sb.append(']').toString();
     }
 
     /** Imprime la configuración cargada, entre separadores. */

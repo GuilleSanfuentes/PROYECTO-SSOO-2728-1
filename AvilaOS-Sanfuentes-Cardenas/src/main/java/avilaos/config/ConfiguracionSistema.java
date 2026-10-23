@@ -5,6 +5,7 @@ import avilaos.estructuras.ListaEnlazada;
 import avilaos.estructuras.Nodo;
 import avilaos.hardware.Reloj;
 import avilaos.so.DatosProceso;
+import avilaos.so.Planificador;
 import avilaos.sync.DatosBuffer;
 
 /** Todos los parámetros configurables del sistema, ya validados. Se obtiene con ArchivoConfiguracion.cargar. */
@@ -13,7 +14,7 @@ public class ConfiguracionSistema {
     public static final int MIN_COMPUTADORES = 2;
     public static final int MAX_COMPUTADORES = 8;
     public static final int MAX_RAM = 1_000_000;
-    public static final int MAX_QUANTUM = 1000;
+    public static final int MAX_QUANTUM = Planificador.QUANTUM_MAXIMO;
     public static final int MAX_LATENCIA = 1000;
     public static final int MAX_ENVEJECIMIENTO = 100_000;
     public static final int MAX_CAPACIDAD_BUFFER = 10_000;

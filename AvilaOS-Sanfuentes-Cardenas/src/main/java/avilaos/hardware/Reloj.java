@@ -127,6 +127,10 @@ public class Reloj {
         ejecutando = false;
         pausado = false;
         esperaPausa.release();
+        if (Thread.currentThread() == hilo) {
+            Debug.ok(ORIGEN, "se detendrá al cerrar el ciclo " + ciclo);
+            return;
+        }
         hilo.interrupt();
         try {
             hilo.join(DURACION_MAXIMA_MS);
@@ -134,6 +138,20 @@ public class Reloj {
             Thread.currentThread().interrupt();
         }
         Debug.ok(ORIGEN, "detenido en el ciclo " + ciclo);
+    }
+
+    /** Espera a que el hilo del reloj termine, como máximo maximoMs (0 = sin límite). Devuelve true si terminó. */
+    public boolean esperarFin(long maximoMs) {
+        Thread actual = hilo;
+        if (actual == null || actual == Thread.currentThread()) {
+            return !ejecutando;
+        }
+        try {
+            actual.join(maximoMs);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        return !actual.isAlive();
     }
 
     /** Detiene el reloj y termina los hilos de todos los componentes. */

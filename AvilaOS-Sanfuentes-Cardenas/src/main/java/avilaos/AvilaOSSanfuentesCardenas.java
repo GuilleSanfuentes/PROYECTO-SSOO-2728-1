@@ -4,14 +4,13 @@
 
 package avilaos;
 
+import avilaos.cluster.Cluster;
 import avilaos.config.ArchivoConfiguracion;
 import avilaos.config.ConfiguracionSistema;
-import avilaos.vista.ReporteTerminal;
 import avilaos.log.Debug;
 import avilaos.log.LogEventos;
-import avilaos.pruebas.PruebasPaso1;
-import avilaos.pruebas.PruebasPaso2;
-import avilaos.pruebas.PruebasPaso3;
+import avilaos.vista.ConsolaTerminal;
+import avilaos.vista.ReporteTerminal;
 
 /**
  *
@@ -25,8 +24,13 @@ public class AvilaOSSanfuentesCardenas {
         Debug.setLog(log);
         ConfiguracionSistema config = ArchivoConfiguracion.cargar(ArchivoConfiguracion.RUTA_POR_DEFECTO);
         ReporteTerminal.resumenConfiguracion(ArchivoConfiguracion.RUTA_POR_DEFECTO, config);
-        PruebasPaso1.ejecutar(log);
-        PruebasPaso2.ejecutar();
-        PruebasPaso3.ejecutar();
+
+        Cluster cluster = new Cluster(config, log);
+        cluster.cargarProcesosIniciales();
+        new ConsolaTerminal(cluster).iniciar();
+        cluster.iniciar();
+        cluster.esperarFin(0);
+        ReporteTerminal.resumenFinal(cluster);
+        cluster.apagar();
     }
 }
