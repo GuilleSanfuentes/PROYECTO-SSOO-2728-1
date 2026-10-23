@@ -66,6 +66,13 @@ public final class Debug {
         escribir(sb.toString());
     }
 
+    /** Imprime un bloque de texto tal cual, sin prefijo (reportes y gráficos). */
+    public static void bloque(String texto) {
+        if (activo) {
+            escribir(texto);
+        }
+    }
+
     /** Arma el prefijo [Cnnnn][origen] NIVEL: mensaje. */
     private static String formatear(String nivel, String origen, String mensaje) {
         return String.format("[C%04d][%s] %s: %s", ciclo, origen, nivel, mensaje);

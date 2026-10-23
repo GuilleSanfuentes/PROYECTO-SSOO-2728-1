@@ -1,0 +1,49 @@
+{
+  "_ayuda": {
+    "nombre": "Texto no vacío",
+    "tipo": "CPU_BOUND | IO_BOUND | PRODUCTOR | CONSUMIDOR",
+    "prioridad": "Entero de 1 (más importante) a 10 (menos importante)",
+    "memoria": "Entero > 0. Unidades de RAM que ocupa el proceso",
+    "deadline": "Entero > 0. Ciclos de reloj antes de que el proceso sea terminado",
+    "computador": "Número del computador (0, 1, ...) o -1 para asignación automática",
+    "instrucciones": "Solo CPU_BOUND e IO_BOUND. Entero > 0",
+    "cadaCiclosES": "Solo IO_BOUND. Cada cuántas instrucciones pide E/S",
+    "duracionES": "Solo IO_BOUND. Ciclos que dura cada E/S",
+    "buffer": "Solo PRODUCTOR y CONSUMIDOR. Nombre del buffer (ej. B1)",
+    "ciclosPorElemento": "Solo PRODUCTOR y CONSUMIDOR. Ciclos para producir o consumir un elemento",
+    "elementos": "Solo PRODUCTOR y CONSUMIDOR. Elementos que debe procesar para terminar"
+  },
+  "procesos": [
+    {
+      "nombre": "Calculadora",
+      "tipo": "CPU_BOUND",
+      "prioridad": 3,
+      "memoria": 120,
+      "deadline": 150,
+      "instrucciones": 60,
+      "computador": 0
+    },
+    {
+      "nombre": "Impresora",
+      "tipo": "IO_BOUND",
+      "prioridad": 6,
+      "memoria": 80,
+      "deadline": 300,
+      "instrucciones": 40,
+      "cadaCiclosES": 5,
+      "duracionES": 8,
+      "computador": 1
+    },
+    {
+      "nombre": "Sensor",
+      "tipo": "PRODUCTOR",
+      "prioridad": 2,
+      "memoria": 60,
+      "deadline": 400,
+      "buffer": "B1",
+      "ciclosPorElemento": 3,
+      "elementos": 10,
+      "computador": -1
+    }
+  ]
+}

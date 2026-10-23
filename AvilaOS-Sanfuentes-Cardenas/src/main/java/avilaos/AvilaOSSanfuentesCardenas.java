@@ -8,6 +8,7 @@ import avilaos.config.ArchivoConfiguracion;
 import avilaos.log.Debug;
 import avilaos.log.LogEventos;
 import avilaos.pruebas.PruebasPaso1;
+import avilaos.pruebas.PruebasPaso2;
 
 /**
  *
@@ -20,5 +21,6 @@ public class AvilaOSSanfuentesCardenas {
         LogEventos log = new LogEventos(LogEventos.CAPACIDAD_POR_DEFECTO);
         Debug.setLog(log);
         PruebasPaso1.ejecutar(log);
+        PruebasPaso2.ejecutar();
     }
 }

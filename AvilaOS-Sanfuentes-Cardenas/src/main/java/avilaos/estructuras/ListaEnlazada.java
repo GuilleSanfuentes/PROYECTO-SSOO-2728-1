@@ -158,6 +158,7 @@ public class ListaEnlazada<T> {
         return cabeza;
     }
 
+    /** Ordena los nodos en base a un criterio. */
     public void insertarOrdenado(T dato, Comparador<T> comparador) {
         if (comparador == null) {
             Debug.error(ORIGEN, "insertarOrdenado: comparador nulo");
@@ -166,6 +167,7 @@ public class ListaEnlazada<T> {
         insertarNodoOrdenado(new Nodo<>(dato), comparador);
     }
 
+    /** Reorganiza los nodos insertados. */
     public void ordenar(Comparador<T> comparador) {
         if (comparador == null) {
             Debug.error(ORIGEN, "ordenar: comparador nulo");
@@ -183,6 +185,7 @@ public class ListaEnlazada<T> {
         }
     }
 
+    /** Inserta nodos nuevos. */
     private void insertarNodoOrdenado(Nodo<T> nuevo, Comparador<T> comparador) {
         if (cabeza == null) {
             cabeza = nuevo;

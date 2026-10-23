@@ -1,7 +1,10 @@
 package avilaos.config;
 
+import avilaos.estructuras.ListaEnlazada;
 import avilaos.log.Debug;
+import avilaos.so.DatosProceso;
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -24,6 +27,7 @@ public final class ArchivoConfiguracion {
 
     public static final String RUTA_POR_DEFECTO = "config/avilaos.json";
     public static final String CLAVE_DEBUGGER = "debugger";
+    public static final String CLAVE_PROCESOS = "procesos";
 
     private static final String ORIGEN = "Config";
     private static final Semaphore acceso = new Semaphore(1);
@@ -64,6 +68,45 @@ public final class ArchivoConfiguracion {
             Debug.error(ORIGEN, "no se pudo leer " + ruta + ": " + e.getMessage() + "; se usan valores por defecto");
             return valoresPorDefecto();
         }
+    }
+
+    /** Lee la lista "procesos" de un JSON; los elementos ilegibles se informan y se omiten. */
+    public static ListaEnlazada<DatosProceso> leerProcesos(String ruta) {
+        ListaEnlazada<DatosProceso> procesos = new ListaEnlazada<>();
+        JsonObject raiz;
+        acceso.acquireUninterruptibly();
+        try (Reader lector = Files.newBufferedReader(Paths.get(ruta), StandardCharsets.UTF_8)) {
+            JsonElement elemento = JsonParser.parseReader(lector);
+            if (!elemento.isJsonObject()) {
+                Debug.error(ORIGEN, ruta + ": la raíz no es un objeto JSON");
+                return procesos;
+            }
+            raiz = elemento.getAsJsonObject();
+        } catch (IOException | JsonParseException e) {
+            Debug.error(ORIGEN, "no se pudo leer " + ruta + ": " + e.getMessage());
+            return procesos;
+        } finally {
+            acceso.release();
+        }
+        if (!raiz.has(CLAVE_PROCESOS) || !raiz.get(CLAVE_PROCESOS).isJsonArray()) {
+            Debug.error(ORIGEN, ruta + ": falta la lista '" + CLAVE_PROCESOS + "'");
+            return procesos;
+        }
+        JsonArray lista = raiz.getAsJsonArray(CLAVE_PROCESOS);
+        for (int i = 0; i < lista.size(); i++) {
+            try {
+                DatosProceso datos = GSON.fromJson(lista.get(i), DatosProceso.class);
+                if (datos == null || datos.tipo() == null) {
+                    Debug.error(ORIGEN, ruta + ": proceso #" + i + " sin tipo válido, se omite");
+                } else {
+                    procesos.agregarFinal(datos);
+                }
+            } catch (JsonParseException e) {
+                Debug.error(ORIGEN, ruta + ": proceso #" + i + " ilegible (" + e.getMessage() + "), se omite");
+            }
+        }
+        Debug.ok(ORIGEN, "leídos " + procesos.tamano() + " de " + lista.size() + " procesos de " + ruta);
+        return procesos;
     }
 
     /** Guarda la configuración de forma atómica: escribe un temporal y lo renombra. */

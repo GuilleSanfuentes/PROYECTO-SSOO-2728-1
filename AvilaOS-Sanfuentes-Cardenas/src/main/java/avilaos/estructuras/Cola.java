@@ -19,7 +19,7 @@ public class Cola<T> {
         elementos.agregarFinal(dato);
     }
 
-    /** Saca y devuelve el elemento del frente, o null si está vacía. */
+    /** Saca el elemento del frente. Vacía: devuelve null y marca ERROR, el Kernel debe revisar antes con estaVacia. */
     public T desencolar() {
         if (elementos.estaVacia()) {
             Debug.error(ORIGEN, "desencolar: la cola está vacía");
