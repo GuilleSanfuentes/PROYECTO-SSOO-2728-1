@@ -3,7 +3,7 @@
   "simulacion": {
     "duracionCicloMs": 500,
     "maxCiclos": 0,
-    "limiteTiempoActivo": true,
+    "limiteTiempoActivo": false,
     "limiteTiempoSegundos": 20,
     "apagadoInactividadActivo": true,
     "apagadoInactividadSegundos": 40,
