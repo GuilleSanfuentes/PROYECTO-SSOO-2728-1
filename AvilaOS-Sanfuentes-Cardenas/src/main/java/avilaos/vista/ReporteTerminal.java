@@ -70,6 +70,8 @@ public final class ReporteTerminal {
         sb.append(separador()).append('\n');
         sb.append(" CICLO ").append(ciclo).append(max > 0 ? " de " + max : "")
                 .append("  |  ").append(cluster.getReloj().getDuracionCicloMs()).append(" ms por ciclo")
+                .append(cluster.getParada().limiteTiempoActivo() ? "  |  límite " + cluster.getParada().limiteTiempoSegundos() + " s" : "")
+                .append(cluster.isInactivo() ? "  |  SIN ACTIVIDAD" : "")
                 .append(cluster.getReloj().isPausado() ? "  |  PAUSADO" : "").append('\n');
         for (int i = 0; i < cluster.cantidadComputadores(); i++) {
             Computador c = cluster.getComputador(i);

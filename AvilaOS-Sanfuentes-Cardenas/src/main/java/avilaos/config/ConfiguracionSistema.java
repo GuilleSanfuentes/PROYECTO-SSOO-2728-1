@@ -20,7 +20,6 @@ public class ConfiguracionSistema {
     public static final int MAX_CAPACIDAD_BUFFER = 10_000;
 
     public static final int DEF_DURACION_MS = Reloj.DURACION_POR_DEFECTO_MS;
-    public static final int DEF_MAX_CICLOS = 0;
     public static final int DEF_LATENCIA = 2;
     public static final int DEF_ENVEJECIMIENTO = 10;
     public static final int DEF_RAM = 1024;
@@ -29,7 +28,7 @@ public class ConfiguracionSistema {
 
     private final boolean debugger;
     private final int duracionCicloMs;
-    private final int maxCiclos;
+    private final CondicionesParada parada;
     private final int latenciaRed;
     private final int envejecimientoCadaCiclos;
     private final ListaEnlazada<ConfigComputador> computadores;
@@ -38,12 +37,12 @@ public class ConfiguracionSistema {
     private final int erroresCarga;
 
     /** Crea la configuración con valores ya validados. */
-    public ConfiguracionSistema(boolean debugger, int duracionCicloMs, int maxCiclos, int latenciaRed,
+    public ConfiguracionSistema(boolean debugger, int duracionCicloMs, CondicionesParada parada, int latenciaRed,
             int envejecimientoCadaCiclos, ListaEnlazada<ConfigComputador> computadores,
             ListaEnlazada<DatosBuffer> buffers, ListaEnlazada<DatosProceso> procesos, int erroresCarga) {
         this.debugger = debugger;
         this.duracionCicloMs = duracionCicloMs;
-        this.maxCiclos = maxCiclos;
+        this.parada = parada;
         this.latenciaRed = latenciaRed;
         this.envejecimientoCadaCiclos = envejecimientoCadaCiclos;
         this.computadores = computadores;
@@ -58,8 +57,8 @@ public class ConfiguracionSistema {
         for (int i = 0; i < MIN_COMPUTADORES; i++) {
             computadores.agregarFinal(new ConfigComputador(DEF_RAM, DEF_POLITICA, DEF_QUANTUM));
         }
-        return new ConfiguracionSistema(true, DEF_DURACION_MS, DEF_MAX_CICLOS, DEF_LATENCIA, DEF_ENVEJECIMIENTO,
-                computadores, new ListaEnlazada<>(), new ListaEnlazada<>(), 0);
+        return new ConfiguracionSistema(true, DEF_DURACION_MS, CondicionesParada.porDefecto(), DEF_LATENCIA,
+                DEF_ENVEJECIMIENTO, computadores, new ListaEnlazada<>(), new ListaEnlazada<>(), 0);
     }
 
     /** Resumen de varias líneas para la terminal. */
@@ -67,10 +66,10 @@ public class ConfiguracionSistema {
         StringBuilder sb = new StringBuilder();
         sb.append(" Debugger: ").append(debugger ? "TRUE" : "FALSE")
                 .append(" | Ciclo: ").append(duracionCicloMs).append(" ms")
-                .append(" | Máx. ciclos: ").append(maxCiclos == 0 ? "sin límite" : String.valueOf(maxCiclos))
                 .append(" | Latencia de red: ").append(latenciaRed).append(" ciclos")
                 .append(" | Envejecimiento: ").append(envejecimientoCadaCiclos == 0 ? "desactivado" : "cada " + envejecimientoCadaCiclos + " ciclos")
                 .append('\n');
+        sb.append(" Parada: ").append(parada.describir()).append('\n');
         sb.append(" Computadores: ").append(computadores.tamano()).append('\n');
         int numero = 0;
         Nodo<ConfigComputador> c = computadores.getCabeza();
@@ -108,9 +107,9 @@ public class ConfiguracionSistema {
         return duracionCicloMs;
     }
 
-    /** Ciclos tras los que la simulación se detiene sola; 0 = sin límite. */
-    public int getMaxCiclos() {
-        return maxCiclos;
+    /** Condiciones con las que la simulación se detiene sola. */
+    public CondicionesParada getParada() {
+        return parada;
     }
 
     public int getLatenciaRed() {

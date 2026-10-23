@@ -5,6 +5,11 @@
 
     "simulacion.duracionCicloMs": "Entero 0..60000. Milisegundos que dura cada ciclo de reloj; 0 = sin espera (500)",
     "simulacion.maxCiclos": "Entero >= 0. Ciclos tras los que la simulación se detiene sola; 0 = sin límite (0)",
+    "simulacion.limiteTiempoActivo": "true o false (también \"TRUE\" / \"FALSE\"). Si es true, la simulación se detiene sola al cumplir limiteTiempoSegundos (false)",
+    "simulacion.limiteTiempoSegundos": "Entero 1..86400. Segundos de ejecución tras los que se detiene; las pausas no cuentan (20). Puede combinarse con maxCiclos: se detiene con lo que ocurra primero",
+    "simulacion.apagadoInactividadActivo": "true o false. Si es true, la simulación se apaga sola cuando TODOS los computadores llevan apagadoInactividadSegundos sin procesos (ni en Nuevos, Listos, CPU ni Bloqueados) y con la CPU ociosa (true)",
+    "simulacion.apagadoInactividadSegundos": "Entero 1..86400. Segundos seguidos de inactividad para apagar; las pausas no cuentan y crear un proceso reinicia la cuenta (40)",
+    "simulacion (parada)": "maxCiclos, limiteTiempo y apagadoInactividad se combinan: la simulación se detiene con la primera condición que se cumpla, o con el comando stop",
     "simulacion.latenciaRed": "Entero 0..1000. Ciclos que se bloquea un proceso en cada inserción o extracción sobre un buffer de otro computador (2)",
     "simulacion.envejecimientoCadaCiclos": "Entero 0..100000. Cada cuántos ciclos en Listos mejora en 1 la prioridad de un proceso; 0 = sin envejecimiento (10)",
 
@@ -38,6 +43,10 @@
   "simulacion": {
     "duracionCicloMs": 500,
     "maxCiclos": 200,
+    "limiteTiempoActivo": true,
+    "limiteTiempoSegundos": 20,
+    "apagadoInactividadActivo": true,
+    "apagadoInactividadSegundos": 40,
     "latenciaRed": 2,
     "envejecimientoCadaCiclos": 10
   },

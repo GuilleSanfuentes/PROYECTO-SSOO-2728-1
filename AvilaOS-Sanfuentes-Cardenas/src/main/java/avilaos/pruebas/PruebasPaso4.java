@@ -3,6 +3,7 @@ package avilaos.pruebas;
 import avilaos.cluster.Cluster;
 import avilaos.cluster.Computador;
 import avilaos.config.ArchivoConfiguracion;
+import avilaos.config.CondicionesParada;
 import avilaos.config.ConfigComputador;
 import avilaos.config.ConfiguracionSistema;
 import avilaos.enums.EstadoProceso;
@@ -44,6 +45,8 @@ public final class PruebasPaso4 {
         probarEntradaSalida();
         probarAdmisionYAsignacion();
         probarMaxCiclosConHilo();
+        probarLimiteDeTiempo();
+        probarApagadoPorInactividad();
         probarConsola();
         probarConfiguracionReal();
         Debug.setCiclo(0);
@@ -237,6 +240,67 @@ public final class PruebasPaso4 {
         c.apagar();
     }
 
+    /** Con el límite de tiempo activo la simulación se detiene sola; el tiempo en pausa no cuenta. */
+    private static void probarLimiteDeTiempo() {
+        r.grupo("Parada automática por límite de tiempo (las pausas no cuentan)");
+        Cluster c = cluster(PoliticaTipo.FCFS, 3, 1024, 0, 0, 10, 1);
+        crear(c, cpu("cronometrado", 5, 1000, 100000, 0));
+        boolean dl = Debug.isActivo();
+        Debug.setActivo(false);
+        long inicio = System.currentTimeMillis();
+        c.iniciar();
+        dormir(300);
+        c.pausar();
+        dormir(700);
+        c.reanudar();
+        boolean termino = c.esperarFin(5000);
+        long duracion = System.currentTimeMillis() - inicio;
+        Debug.setActivo(dl);
+        r.verificar("se detiene sola con 1 s de límite", termino && !c.getReloj().isEjecutando(), "ciclo " + c.getReloj().getCiclo());
+        r.verificar("los 700 ms de pausa no cuentan (dura al menos 1,6 s en total)", duracion >= 1600 && duracion < 4000,
+                duracion + " ms");
+        c.apagar();
+    }
+
+    /** Se apaga sola tras 1 s con todos los computadores sin procesos; mientras hay trabajo, la cuenta no avanza. */
+    private static void probarApagadoPorInactividad() {
+        r.grupo("Apagado por inactividad de todos los computadores");
+        CondicionesParada parada = new CondicionesParada(0, false, 1, true, 1);
+        boolean dl = Debug.isActivo();
+        Debug.setActivo(false);
+
+        Cluster vacio = cluster(PoliticaTipo.FCFS, 3, 1024, 0, 10, parada);
+        long inicio = System.currentTimeMillis();
+        vacio.iniciar();
+        boolean apagado = vacio.esperarFin(5000);
+        long duracionVacio = System.currentTimeMillis() - inicio;
+        vacio.apagar();
+
+        Cluster ocupado = cluster(PoliticaTipo.FCFS, 3, 1024, 0, 10, parada);
+        PCB trabajo = crear(ocupado, cpu("trabajo", 5, 150, 100000, 1));
+        inicio = System.currentTimeMillis();
+        ocupado.iniciar();
+        boolean apagadoTrasTrabajo = ocupado.esperarFin(8000);
+        long duracionOcupado = System.currentTimeMillis() - inicio;
+        ocupado.apagar();
+        Debug.setActivo(dl);
+
+        r.verificar("sin procesos se apaga sola tras 1 s", apagado && duracionVacio >= 1000 && duracionVacio < 3000,
+                duracionVacio + " ms");
+        r.verificar("con un proceso de 150 instrucciones no se apaga mientras trabaja", apagadoTrasTrabajo
+                && trabajo.getEstado() == EstadoProceso.TERMINADO, trabajo.toString());
+        r.verificar("se apaga 1 s después de que termina (más de 2,5 s en total)", duracionOcupado >= 2500,
+                duracionOcupado + " ms");
+    }
+
+    private static void dormir(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     /** Los comandos de la terminal cambian el sistema y los inválidos se rechazan sin detenerlo. */
     private static void probarConsola() {
         r.grupo("Comandos de la terminal (equivalen a los botones de la GUI)");
@@ -300,10 +364,23 @@ public final class PruebasPaso4 {
 
     /** Clúster de 2 computadores: el 0 con los parámetros indicados, el 1 FCFS con 1024 de RAM. */
     private static Cluster cluster(PoliticaTipo politica, int quantum, int ram0, int envejecimiento, int maxCiclos, int duracionMs) {
+        return cluster(politica, quantum, ram0, envejecimiento, maxCiclos, duracionMs, 0);
+    }
+
+    /** Igual que el anterior, con límite de tiempo en segundos (0 = desactivado) y sin apagado por inactividad. */
+    private static Cluster cluster(PoliticaTipo politica, int quantum, int ram0, int envejecimiento, int maxCiclos,
+            int duracionMs, int limiteSegundos) {
+        return cluster(politica, quantum, ram0, envejecimiento, duracionMs, new CondicionesParada(maxCiclos,
+                limiteSegundos > 0, Math.max(limiteSegundos, 1), false, CondicionesParada.DEF_INACTIVIDAD_SEGUNDOS));
+    }
+
+    /** Clúster de 2 computadores con condiciones de parada explícitas. */
+    private static Cluster cluster(PoliticaTipo politica, int quantum, int ram0, int envejecimiento, int duracionMs,
+            CondicionesParada parada) {
         ListaEnlazada<ConfigComputador> computadores = new ListaEnlazada<>();
         computadores.agregarFinal(new ConfigComputador(ram0, politica, quantum));
         computadores.agregarFinal(new ConfigComputador(1024, PoliticaTipo.FCFS, 3));
-        ConfiguracionSistema config = new ConfiguracionSistema(true, duracionMs, maxCiclos, 2, envejecimiento,
+        ConfiguracionSistema config = new ConfiguracionSistema(true, duracionMs, parada, 2, envejecimiento,
                 computadores, new ListaEnlazada<DatosBuffer>(), new ListaEnlazada<DatosProceso>(), 0);
         return new Cluster(config, log);
     }

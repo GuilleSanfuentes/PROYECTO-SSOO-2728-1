@@ -1,5 +1,6 @@
 package avilaos.cluster;
 
+import avilaos.config.CondicionesParada;
 import avilaos.config.ConfigComputador;
 import avilaos.config.ConfiguracionSistema;
 import avilaos.enums.PoliticaTipo;
@@ -23,13 +24,16 @@ public class Cluster implements ObservadorReloj {
     private final Reloj reloj;
     private final Computador[] computadores;
     private final ListaEnlazada<ObservadorReloj> observadores = new ListaEnlazada<>();
+    private final CondicionesParada parada;
     private volatile int maxCiclos;
+    private volatile boolean inactivo;
 
     /** Arma el clúster según la configuración: un reloj, N computadores y sus hilos. */
     public Cluster(ConfiguracionSistema config, LogEventos log) {
         this.config = config;
         this.log = log;
-        this.maxCiclos = config.getMaxCiclos();
+        this.parada = config.getParada();
+        this.maxCiclos = parada.maxCiclos();
         this.reloj = new Reloj(config.getDuracionCicloMs());
         int faseES = reloj.agregarFase("E/S y red");
         int faseCPU = reloj.agregarFase("CPU");
@@ -88,7 +92,11 @@ public class Cluster implements ObservadorReloj {
         } else {
             destino = computadores[datos.computador()];
         }
-        return destino.getKernel().agregarProceso(pcb, ciclo) ? pcb : null;
+        if (!destino.getKernel().agregarProceso(pcb, ciclo)) {
+            return null;
+        }
+        inactivo = false;
+        return pcb;
     }
 
     /** Busca el computador menos cargado para el proceso nuevo. */
@@ -156,6 +164,7 @@ public class Cluster implements ObservadorReloj {
         for (Computador c : computadores) {
             c.getKernel().cerrarCiclo(ciclo);
         }
+        inactivo = calcularInactividad();
         Nodo<ObservadorReloj> nodo = observadores.getCabeza();
         while (nodo != null) {
             nodo.getDato().alCerrarCiclo(ciclo);
@@ -168,11 +177,65 @@ public class Cluster implements ObservadorReloj {
         }
     }
 
-    /** Arranca el reloj global. */
+    /** Todos los computadores sin procesos vivos y con la CPU ociosa. */
+    private boolean calcularInactividad() {
+        for (Computador c : computadores) {
+            if (c.carga() > 0 || !c.getCpu().isOciosa()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Arranca el reloj global y, si hace falta, el vigilante del límite de tiempo y de la inactividad. */
     public boolean iniciar() {
-        log.registrar(reloj.getCiclo(), "Simulación iniciada (" + reloj.getDuracionCicloMs() + " ms por ciclo, máximo "
-                + (maxCiclos == 0 ? "sin límite" : maxCiclos + " ciclos") + ")");
-        return reloj.iniciar();
+        log.registrar(reloj.getCiclo(), "Simulación iniciada (" + reloj.getDuracionCicloMs() + " ms por ciclo; "
+                + parada.describir() + ")");
+        boolean iniciado = reloj.iniciar();
+        if (iniciado && (parada.limiteTiempoActivo() || parada.inactividadActiva())) {
+            Thread vigilante = new Thread(this::vigilar, "Hilo-Vigilante");
+            vigilante.setDaemon(true);
+            vigilante.start();
+        }
+        return iniciado;
+    }
+
+    /** Vigilante: cuenta el tiempo en marcha y el tiempo seguido de inactividad; las pausas no cuentan. */
+    private void vigilar() {
+        final long paso = 50;
+        long limiteTiempo = parada.limiteTiempoSegundos() * 1000L;
+        long limiteInactividad = parada.inactividadSegundos() * 1000L;
+        long enMarcha = 0;
+        long sinActividad = 0;
+        while (reloj.isEjecutando()) {
+            try {
+                Thread.sleep(paso);
+            } catch (InterruptedException e) {
+                return;
+            }
+            if (reloj.isPausado()) {
+                continue;
+            }
+            enMarcha += paso;
+            sinActividad = inactivo ? sinActividad + paso : 0;
+            if (parada.limiteTiempoActivo() && enMarcha >= limiteTiempo) {
+                detenerPor("se cumplió el límite de " + parada.limiteTiempoSegundos() + " segundos");
+                return;
+            }
+            if (parada.inactividadActiva() && sinActividad >= limiteInactividad) {
+                detenerPor("todos los computadores llevan " + parada.inactividadSegundos()
+                        + " segundos sin procesos y con la CPU ociosa");
+                return;
+            }
+        }
+    }
+
+    /** Detiene la simulación registrando el motivo. */
+    private void detenerPor(String motivo) {
+        if (reloj.isEjecutando()) {
+            log.registrar(reloj.getCiclo(), "Simulación detenida: " + motivo);
+            reloj.detener();
+        }
     }
 
     public void pausar() {
@@ -243,6 +306,16 @@ public class Cluster implements ObservadorReloj {
 
     public int getMaxCiclos() {
         return maxCiclos;
+    }
+
+    /** Condiciones de parada automática de esta simulación. */
+    public CondicionesParada getParada() {
+        return parada;
+    }
+
+    /** Indica si en el último ciclo todos los computadores estaban sin procesos y ociosos. */
+    public boolean isInactivo() {
+        return inactivo;
     }
 
     public LogEventos getLog() {
