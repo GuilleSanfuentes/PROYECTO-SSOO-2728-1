@@ -29,12 +29,12 @@ public abstract class ProgramaBuffer implements Programa {
     }
 
     @Override
-    public Instruccion instruccionEn(int pc) {
-        if (pc < 0 || pc >= totalInstrucciones()) {
-            Debug.error(getClass().getSimpleName(), "PC " + pc + " fuera del programa (0.." + (totalInstrucciones() - 1) + ")");
+    public Instruccion instruccionEn(int contador) {
+        if (contador < 0 || contador >= totalInstrucciones()) {
+            Debug.error(getClass().getSimpleName(), "Contador " + contador + " fuera del programa (0.." + (totalInstrucciones() - 1) + ")");
             return null;
         }
-        return instruccionEnElemento(pc % largoPorElemento());
+        return instruccionEnElemento(contador % largoPorElemento());
     }
 
     /** Instrucción en la posición indicada dentro del ciclo de un elemento. */

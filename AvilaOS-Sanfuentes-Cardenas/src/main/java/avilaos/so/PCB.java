@@ -30,7 +30,7 @@ public class PCB {
     private String detalleBloqueo;
     private int prioridadEfectiva;
     private int deadlineRestante;
-    private int pc;
+    private int contador;
     private int mar;
     private int elementosProcesados;
     private int ciclosEsperandoEnListos;
@@ -67,25 +67,25 @@ public class PCB {
         return "P" + id + "-H1";
     }
 
-    /** Instrucción a la que apunta el PC, o null si el programa terminó. */
+    /** Instrucción a la que apunta el Contador, o null si el programa terminó. */
     public Instruccion instruccionActual() {
-        return programaTerminado() ? null : programa.instruccionEn(pc);
+        return programaTerminado() ? null : programa.instruccionEn(contador);
     }
 
-    /** Avanza PC y MAR una posición tras ejecutar una instrucción. */
-    public boolean avanzarPC() {
+    /** Avanza Contador y MAR una posición tras ejecutar una instrucción. */
+    public boolean avanzarContador() {
         if (programaTerminado()) {
-            Debug.error(ORIGEN, getEtiqueta() + " intenta avanzar el PC más allá del programa (" + pc + ")");
+            Debug.error(ORIGEN, getEtiqueta() + " intenta avanzar el Contador más allá del programa (" + contador + ")");
             return false;
         }
-        pc++;
+        contador++;
         mar++;
         return true;
     }
 
     /** Indica si ya se ejecutaron todas las instrucciones. */
     public boolean programaTerminado() {
-        return pc >= programa.totalInstrucciones();
+        return contador >= programa.totalInstrucciones();
     }
 
     /** Cambia de estado si la transición es válida; si no, informa el error y no cambia nada. */
@@ -202,7 +202,7 @@ public class PCB {
 
     /** Instrucciones que faltan por ejecutar. */
     public int getTiempoRestante() {
-        return programa.totalInstrucciones() - pc;
+        return programa.totalInstrucciones() - contador;
     }
 
     /** Cierra un bloqueo en semáforo abierto y suma su duración. */
@@ -275,8 +275,8 @@ public class PCB {
         return detalleBloqueo;
     }
 
-    public int getPc() {
-        return pc;
+    public int getContador() {
+        return contador;
     }
 
     public int getMar() {
@@ -307,11 +307,11 @@ public class PCB {
         return deadlineVencido;
     }
 
-    /** Resumen del tipo P3-H1 'calc' [Listo] prio=2 dl=88 PC=12/40. */
+    /** Resumen del tipo P3-H1 'calc' [Listo] prio=2 dl=88 Contador=12/40. */
     @Override
     public String toString() {
         String texto = getEtiqueta() + " '" + nombre + "' [" + estado.getNombre() + "] prio=" + prioridadEfectiva
-                + " dl=" + deadlineRestante + " PC=" + pc + "/" + programa.totalInstrucciones();
+                + " dl=" + deadlineRestante + " Contador=" + contador + "/" + programa.totalInstrucciones();
         if (estado == EstadoProceso.BLOQUEADO) {
             texto += " (" + motivoBloqueo.getNombre() + (detalleBloqueo.isEmpty() ? "" : ": " + detalleBloqueo) + ")";
         }

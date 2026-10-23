@@ -320,13 +320,13 @@ public final class PruebasPaso3 {
                 }
                 actual = listos.desencolar();
                 actual.despachar(ciclo);
-                cpu.cargarContexto(actual.getId(), actual.getEtiqueta(), actual.getPc(), actual.getMar());
+                cpu.cargarContexto(actual.getId(), actual.getEtiqueta(), actual.getContador(), actual.getMar());
                 cpu.ejecutarCodigoSO("despacha " + actual.getEtiqueta());
                 return;
             }
             Instruccion instruccion = actual.instruccionActual();
             cpu.ejecutarInstruccion(instruccion.modo(), instruccion.toString());
-            actual.avanzarPC();
+            actual.avanzarContador();
             if (instruccion.tipo() == TipoInstruccion.SOLICITAR_ES) {
                 liberarCPU(cpu);
                 int duracion = ((ProgramaIOBound) actual.getPrograma()).getDuracionES();
@@ -343,7 +343,7 @@ public final class PruebasPaso3 {
 
         private void liberarCPU(CPU cpu) {
             ContextoCPU contexto = cpu.guardarContexto();
-            if (contexto == null || contexto.pc() != actual.getPc() || contexto.mar() != actual.getMar()) {
+            if (contexto == null || contexto.contador() != actual.getContador() || contexto.mar() != actual.getMar()) {
                 contextoCoherente = false;
             }
         }

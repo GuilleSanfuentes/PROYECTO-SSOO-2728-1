@@ -5,7 +5,7 @@ public final class AvanceProyecto {
 
     private static final String[] COMPONENTES = {
         "Estructuras propias", "Enums", "Debugger y log", "Config JSON",
-        "PCB y estados", "Programas (PC)", "Políticas de planificación",
+        "PCB y estados", "Programas (Contador)", "Políticas de planificación",
         "Reloj global", "CPU", "RAM", "DMA (E/S)",
         "Kernel y planificador", "Admisión (largo plazo)",
         "Semáforos ÁvilaOS", "Buffers productor-consumidor",

@@ -56,7 +56,7 @@ public final class PruebasPaso2 {
 
     /** Cada tipo de programa genera la secuencia de instrucciones esperada. */
     private static void probarProgramas() {
-        r.grupo("Programas por tipo (secuencia de instrucciones según el PC)");
+        r.grupo("Programas por tipo (secuencia de instrucciones según el Contador)");
         PCB io = r.registrar(FabricaProcesos.crear(DatosProceso.ioBound("io", 5, 50, 100, 7, 3, 4, AUTO), 0));
         r.verificar("I/O bound pide E/S cada 3", secuencia(io.getPrograma()).equals("C C E C C E C"), secuencia(io.getPrograma()));
 
@@ -75,9 +75,9 @@ public final class PruebasPaso2 {
                 && espera.semaforo() == RolSemaforo.VACIO && espera.modo().name().equals("SISTEMA_OPERATIVO"), String.valueOf(espera));
     }
 
-    /** Transiciones válidas se aplican; las inválidas se rechazan; el PC avanza y se detiene al final. */
+    /** Transiciones válidas se aplican; las inválidas se rechazan; el Contador avanza y se detiene al final. */
     private static void probarTransiciones() {
-        r.grupo("Transiciones de estado y avance del PC");
+        r.grupo("Transiciones de estado y avance del Contador");
         PCB pcb = r.registrar(FabricaProcesos.crear(DatosProceso.cpuBound("trans", 4, 10, 100, 2, 0), 5));
         r.verificar("Nuevo -> Listo", pcb.cambiarEstado(EstadoProceso.LISTO), pcb.toString());
         r.verificar("Listo -> Ejecución (despachar)", pcb.despachar(8) && pcb.getTiempoRespuesta() == 3, pcb.toString());
@@ -89,16 +89,16 @@ public final class PruebasPaso2 {
         r.verificar("rechaza Listo -> Bloqueado", !pcb.bloquear(MotivoBloqueo.ENTRADA_SALIDA, "", 15)
                 && pcb.getEstado() == EstadoProceso.LISTO, pcb.toString());
         pcb.despachar(16);
-        r.verificar("avanzar PC", pcb.avanzarPC() && pcb.avanzarPC() && pcb.programaTerminado() && pcb.getMar() == 2, pcb.toString());
-        r.verificar("no avanza PC tras el final", !pcb.avanzarPC() && pcb.getPc() == 2, pcb.toString());
+        r.verificar("avanzar Contador", pcb.avanzarContador() && pcb.avanzarContador() && pcb.programaTerminado() && pcb.getMar() == 2, pcb.toString());
+        r.verificar("no avanza Contador tras el final", !pcb.avanzarContador() && pcb.getContador() == 2, pcb.toString());
         r.verificar("Ejecución -> Terminado", pcb.terminar(17, false) && pcb.getCicloFin() == 17 && !pcb.isDeadlineVencido(), pcb.toString());
 
         PCB bloqueado = r.registrar(FabricaProcesos.crear(DatosProceso.ioBound("espera", 6, 20, 60, 9, 3, 5, 1), 20));
         bloqueado.cambiarEstado(EstadoProceso.LISTO);
         bloqueado.despachar(22);
-        bloqueado.avanzarPC();
-        bloqueado.avanzarPC();
-        bloqueado.avanzarPC();
+        bloqueado.avanzarContador();
+        bloqueado.avanzarContador();
+        bloqueado.avanzarContador();
         r.verificar("I/O bound se bloquea por E/S", bloqueado.bloquear(MotivoBloqueo.ENTRADA_SALIDA, "5 ciclos en DMA", 25),
                 bloqueado.toString());
     }
@@ -209,8 +209,8 @@ public final class PruebasPaso2 {
     /** Abrevia el programa: C cálculo, E E/S, W semWait, S semSignal, I insertar, X extraer. */
     private static String secuencia(Programa programa) {
         StringBuilder sb = new StringBuilder();
-        for (int pc = 0; pc < programa.totalInstrucciones(); pc++) {
-            Instruccion ins = programa.instruccionEn(pc);
+        for (int contador = 0; contador < programa.totalInstrucciones(); contador++) {
+            Instruccion ins = programa.instruccionEn(contador);
             String abreviada = switch (ins.tipo()) {
                 case CALCULO -> "C";
                 case SOLICITAR_ES -> "E";

@@ -83,7 +83,7 @@ public final class ReporteTerminal {
         }
         sb.append("\n\n");
         sb.append(String.format(" %-8s %-10s %-10s %-10s %-4s %-5s %-4s %-24s %-24s %s%n",
-                "ID", "Nombre", "Tipo", "Estado", "Comp", "Prio", "Mem", "Progreso (PC/total)", "Deadline (restante)", "Bloqueo"));
+                "ID", "Nombre", "Tipo", "Estado", "Comp", "Prio", "Mem", "Progreso (Contador)", "Deadline (restante)", "Bloqueo"));
         Nodo<PCB> nodo = procesos.getCabeza();
         while (nodo != null) {
             sb.append(fila(nodo.getDato())).append('\n');
@@ -107,7 +107,7 @@ public final class ReporteTerminal {
         return String.format(" %-8s %-10s %-10s %-10s %-4s %-5s %-4d %-24s %-24s %s",
                 p.getEtiqueta(), recortar(p.getNombre(), 10), recortar(p.getTipo().getNombre(), 10),
                 p.getEstado().getNombre(), computador, prioridad, p.getMemoria(),
-                barra(p.getPc(), total) + " " + p.getPc() + "/" + total,
+                barra(p.getContador(), total) + " " + p.getContador() + "/" + total,
                 barra(p.getDeadlineRestante(), p.getDeadlineInicial()) + " " + p.getDeadlineRestante() + "/" + p.getDeadlineInicial(),
                 bloqueo);
     }
@@ -115,7 +115,7 @@ public final class ReporteTerminal {
     /** Estado de la CPU: modo, proceso cargado, registros y uso. */
     public static String lineaCPU(CPU cpu) {
         long total = cpu.getCiclosUsuario() + cpu.getCiclosSO() + cpu.getCiclosOciosos();
-        String proceso = cpu.getIdProceso() == CPU.SIN_PROCESO ? "ninguno" : cpu.getEtiquetaProceso() + " PC=" + cpu.getPc() + " MAR=" + cpu.getMar();
+        String proceso = cpu.getIdProceso() == CPU.SIN_PROCESO ? "ninguno" : cpu.getEtiquetaProceso() + " Contador=" + cpu.getContador() + " MAR=" + cpu.getMar();
         return String.format(" %-10s modo=%-17s proceso=%-22s uso %s %5.1f%%  (usuario %d, SO %d, ociosa %d de %d ciclos)",
                 cpu.getNombre(), cpu.isOciosa() ? "ociosa" : cpu.getModo().getNombre(), proceso,
                 barra((int) (cpu.getCiclosUsuario() + cpu.getCiclosSO()), (int) total), cpu.getUtilizacion(),

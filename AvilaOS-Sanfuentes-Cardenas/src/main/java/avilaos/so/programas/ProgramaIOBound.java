@@ -18,12 +18,12 @@ public class ProgramaIOBound implements Programa {
 
     /** La última instrucción de cada tramo de cadaCiclos es una solicitud de E/S; el resto es cálculo. */
     @Override
-    public Instruccion instruccionEn(int pc) {
-        if (pc < 0 || pc >= instrucciones) {
-            Debug.error("IOBound", "PC " + pc + " fuera del programa (0.." + (instrucciones - 1) + ")");
+    public Instruccion instruccionEn(int contador) {
+        if (contador < 0 || contador >= instrucciones) {
+            Debug.error("IOBound", "Contador " + contador + " fuera del programa (0.." + (instrucciones - 1) + ")");
             return null;
         }
-        return (pc + 1) % cadaCiclos == 0 ? Instruccion.SOLICITAR_ES : Instruccion.CALCULO;
+        return (contador + 1) % cadaCiclos == 0 ? Instruccion.SOLICITAR_ES : Instruccion.CALCULO;
     }
 
     @Override

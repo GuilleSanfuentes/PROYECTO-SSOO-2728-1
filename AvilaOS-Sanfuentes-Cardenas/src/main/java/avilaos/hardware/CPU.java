@@ -4,7 +4,7 @@ import avilaos.enums.ModoCPU;
 import avilaos.estructuras.ListaEnlazada;
 import avilaos.log.Debug;
 
-/** Procesador: registros PC y MAR, modo de ejecución y contadores de uso. Ejecuta lo que el SO le indica. */
+/** Procesador: registros Contador y MAR, modo de ejecución y contadores de uso. Ejecuta lo que el SO le indica. */
 public class CPU implements ComponenteReloj {
 
     public static final int SIN_PROCESO = -1;
@@ -17,7 +17,7 @@ public class CPU implements ComponenteReloj {
     private boolean ociosa = true;
     private int idProceso = SIN_PROCESO;
     private String etiquetaProceso = "";
-    private int pc;
+    private int contador;
     private int mar;
     private String ultimaAccion = "ninguna";
     private int accionesEnCiclo;
@@ -57,16 +57,16 @@ public class CPU implements ComponenteReloj {
     }
 
     /** Carga los registros de un proceso (parte del despacho). Falla si ya hay uno cargado. */
-    public boolean cargarContexto(int id, String etiqueta, int pcProceso, int marProceso) {
+    public boolean cargarContexto(int id, String etiqueta, int contadorProceso, int marProceso) {
         if (idProceso != SIN_PROCESO) {
             Debug.error(nombre, "cargar " + etiqueta + " sin guardar antes el contexto de " + etiquetaProceso);
             return false;
         }
         idProceso = id;
         etiquetaProceso = etiqueta;
-        pc = pcProceso;
+        contador = contadorProceso;
         mar = marProceso;
-        Debug.ok(nombre, "contexto cargado: " + etiqueta + " PC=" + pc + " MAR=" + mar);
+        Debug.ok(nombre, "contexto cargado: " + etiqueta + " Contador=" + contador + " MAR=" + mar);
         return true;
     }
 
@@ -76,22 +76,22 @@ public class CPU implements ComponenteReloj {
             Debug.error(nombre, "guardar contexto sin proceso cargado");
             return null;
         }
-        ContextoCPU contexto = new ContextoCPU(idProceso, etiquetaProceso, pc, mar);
-        Debug.ok(nombre, "contexto guardado: " + etiquetaProceso + " PC=" + pc + " MAR=" + mar);
+        ContextoCPU contexto = new ContextoCPU(idProceso, etiquetaProceso, contador, mar);
+        Debug.ok(nombre, "contexto guardado: " + etiquetaProceso + " Contador=" + contador + " MAR=" + mar);
         idProceso = SIN_PROCESO;
         etiquetaProceso = "";
         return contexto;
     }
 
-    /** Ejecuta la instrucción del proceso cargado en el modo indicado: PC y MAR avanzan una posición. */
+    /** Ejecuta la instrucción del proceso cargado en el modo indicado: Contador y MAR avanzan una posición. */
     public boolean ejecutarInstruccion(ModoCPU modoInstruccion, String descripcion) {
         if (idProceso == SIN_PROCESO) {
             Debug.error(nombre, "ejecutar '" + descripcion + "' sin proceso cargado");
             return false;
         }
         registrarAccion(modoInstruccion, false);
-        ultimaAccion = etiquetaProceso + " " + descripcion + " (PC " + pc + ")";
-        pc++;
+        ultimaAccion = etiquetaProceso + " " + descripcion + " (Contador " + contador + ")";
+        contador++;
         mar++;
         Debug.ok(nombre, "[" + modo.getNombre() + "] " + ultimaAccion);
         return true;
@@ -152,8 +152,8 @@ public class CPU implements ComponenteReloj {
         return etiquetaProceso;
     }
 
-    public int getPc() {
-        return pc;
+    public int getContador() {
+        return contador;
     }
 
     public int getMar() {

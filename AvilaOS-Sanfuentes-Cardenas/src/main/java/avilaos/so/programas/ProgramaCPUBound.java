@@ -14,9 +14,9 @@ public class ProgramaCPUBound implements Programa {
 
     /** Devuelve siempre una instrucción de cálculo. */
     @Override
-    public Instruccion instruccionEn(int pc) {
-        if (pc < 0 || pc >= instrucciones) {
-            Debug.error("CPUBound", "PC " + pc + " fuera del programa (0.." + (instrucciones - 1) + ")");
+    public Instruccion instruccionEn(int contador) {
+        if (contador < 0 || contador >= instrucciones) {
+            Debug.error("CPUBound", "Contador " + contador + " fuera del programa (0.." + (instrucciones - 1) + ")");
             return null;
         }
         return Instruccion.CALCULO;
