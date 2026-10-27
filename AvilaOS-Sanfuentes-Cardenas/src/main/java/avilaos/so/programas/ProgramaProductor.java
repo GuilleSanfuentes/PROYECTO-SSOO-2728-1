@@ -26,6 +26,18 @@ public class ProgramaProductor extends ProgramaBuffer {
         };
     }
 
+    /** Fichas que retiene el productor según cuántas instrucciones lleva de su elemento. */
+    @Override
+    protected RolSemaforo[] fichasEnPosicion(int ejecutadas) {
+        return switch (ejecutadas - getCiclosPorElemento()) {
+            case 1 -> new RolSemaforo[] {RolSemaforo.VACIO};
+            case 2 -> new RolSemaforo[] {RolSemaforo.MUTEX, RolSemaforo.VACIO};
+            case 3 -> new RolSemaforo[] {RolSemaforo.MUTEX, RolSemaforo.LLENO};
+            case 4 -> new RolSemaforo[] {RolSemaforo.LLENO};
+            default -> new RolSemaforo[0];
+        };
+    }
+
     @Override
     public String descripcion() {
         return "Productor en buffer " + getBuffer() + ", " + getElementos() + " elementos, uno cada "

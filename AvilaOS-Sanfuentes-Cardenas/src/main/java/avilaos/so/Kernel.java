@@ -3,7 +3,9 @@ package avilaos.so;
 import avilaos.enums.EstadoProceso;
 import avilaos.enums.MotivoBloqueo;
 import avilaos.enums.PoliticaTipo;
+import avilaos.enums.RolSemaforo;
 import avilaos.enums.TipoInstruccion;
+import avilaos.enums.TipoInterrupcion;
 import avilaos.estructuras.Cola;
 import avilaos.estructuras.Comparador;
 import avilaos.estructuras.ListaEnlazada;
@@ -12,17 +14,21 @@ import avilaos.hardware.CPU;
 import avilaos.hardware.ContextoCPU;
 import avilaos.hardware.DMA;
 import avilaos.hardware.Interrupcion;
+import avilaos.hardware.LineaInterrupciones;
 import avilaos.hardware.RAM;
 import avilaos.hardware.SistemaOperativo;
 import avilaos.log.Debug;
 import avilaos.log.LogEventos;
 import avilaos.so.programas.Instruccion;
+import avilaos.so.programas.ProgramaBuffer;
 import avilaos.so.programas.ProgramaIOBound;
+import avilaos.sync.Buffer;
+import avilaos.sync.RegistroBuffers;
 import java.util.concurrent.Semaphore;
 
 /**
  * Núcleo del SO de un computador: colas de procesos, admisión por RAM, planificación, despacho,
- * E/S, deadlines y envejecimiento. Todas sus estructuras se protegen con un único semáforo.
+ * E/S, semáforos y buffers, deadlines y envejecimiento. Todas sus estructuras se protegen con un único semáforo.
  */
 public class Kernel implements SistemaOperativo {
 
@@ -43,6 +49,9 @@ public class Kernel implements SistemaOperativo {
     private final Cola<PCB> listos = new Cola<>();
     private final ListaEnlazada<PCB> bloqueados = new ListaEnlazada<>();
     private final ListaEnlazada<PCB> terminados = new ListaEnlazada<>();
+    private final ListaEnlazada<Interrupcion> diferidas = new ListaEnlazada<>();
+    private volatile RegistroBuffers buffers;
+    private volatile LineaInterrupciones[] lineas;
     private PCB enEjecucion;
     private int ciclosEnCPU;
 
@@ -60,6 +69,12 @@ public class Kernel implements SistemaOperativo {
         this.log = log;
     }
 
+    /** Conecta el registro de buffers del clúster y las líneas de interrupción de todos los computadores. */
+    public void conectarSincronizacion(RegistroBuffers registro, LineaInterrupciones[] lineasClaster) {
+        this.buffers = registro;
+        this.lineas = lineasClaster;
+    }
+
     /** Recibe un proceso nuevo en la cola de Nuevos. Rechaza los que nunca cabrían en la RAM. */
     public boolean agregarProceso(PCB pcb, long ciclo) {
         if (pcb.getMemoria() > ram.getCapacidad()) {
@@ -67,8 +82,7 @@ public class Kernel implements SistemaOperativo {
                     + ram.getCapacidad() + "; nunca podría admitirse, se rechaza");
             return false;
         }
-        if (pcb.getTipo().usaBuffer()) {
-            Debug.error(origen, pcb.getEtiqueta() + ": productores y consumidores estarán disponibles en la etapa 5; se rechaza");
+        if (pcb.getTipo().usaBuffer() && !bufferAceptable(pcb)) {
             return false;
         }
         mutex.acquireUninterruptibly();
@@ -168,26 +182,47 @@ public class Kernel implements SistemaOperativo {
         }
     }
 
-    /** Devuelve a Listos los procesos cuya E/S terminó; si era su última instrucción, los termina. */
+    /** Atiende las interrupciones pendientes; los despertares de semáforo emitidos en este mismo ciclo esperan al siguiente. */
     private void atenderInterrupciones(ListaEnlazada<Interrupcion> interrupciones, long ciclo) {
-        Nodo<Interrupcion> nodo = interrupciones.getCabeza();
+        ListaEnlazada<Interrupcion> aplazadas = new ListaEnlazada<>();
+        recorrerInterrupciones(diferidas.getCabeza(), aplazadas, ciclo);
+        recorrerInterrupciones(interrupciones.getCabeza(), aplazadas, ciclo);
+        diferidas.vaciar();
+        Nodo<Interrupcion> aplazada = aplazadas.getCabeza();
+        while (aplazada != null) {
+            diferidas.agregarFinal(aplazada.getDato());
+            aplazada = aplazada.getSiguiente();
+        }
+    }
+
+    /** Atiende cada interrupción desde el nodo dado; las de semáforo del ciclo actual se anotan en aplazadas. */
+    private void recorrerInterrupciones(Nodo<Interrupcion> nodo, ListaEnlazada<Interrupcion> aplazadas, long ciclo) {
         while (nodo != null) {
             Interrupcion irq = nodo.getDato();
-            PCB pcb = buscar(bloqueados.getCabeza(), irq.idProceso());
-            if (pcb == null) {
-                Debug.info(origen, "interrupción de " + irq.etiqueta() + " ignorada: ya no está bloqueado");
+            if (irq.tipo() == TipoInterrupcion.SEMAFORO_SIGNAL && irq.ciclo() >= ciclo) {
+                aplazadas.agregarFinal(irq);
             } else {
-                bloqueados.eliminar(pcb);
-                if (pcb.programaTerminado()) {
-                    evento(ciclo, "Proceso " + pcb.getEtiqueta() + " termina su última E/S");
-                    terminarProceso(pcb, ciclo, false);
-                } else {
-                    pcb.desbloquear(ciclo);
-                    listos.encolar(pcb);
-                    evento(ciclo, "Proceso " + pcb.getEtiqueta() + " se desbloquea (" + irq.tipo().getNombre() + ") y pasa a Listos");
-                }
+                atenderInterrupcion(irq, ciclo);
             }
             nodo = nodo.getSiguiente();
+        }
+    }
+
+    /** Devuelve a Listos al proceso que esperaba (E/S o semáforo); si era su última instrucción, lo termina. */
+    private void atenderInterrupcion(Interrupcion irq, long ciclo) {
+        PCB pcb = buscar(bloqueados.getCabeza(), irq.idProceso());
+        if (pcb == null) {
+            Debug.info(origen, "interrupción de " + irq.etiqueta() + " ignorada: ya no está bloqueado");
+            return;
+        }
+        bloqueados.eliminar(pcb);
+        if (pcb.programaTerminado()) {
+            evento(ciclo, "Proceso " + pcb.getEtiqueta() + " termina su última espera");
+            terminarProceso(pcb, ciclo, false);
+        } else {
+            pcb.desbloquear(ciclo);
+            listos.encolar(pcb);
+            evento(ciclo, "Proceso " + pcb.getEtiqueta() + " se desbloquea (" + irq.tipo().getNombre() + ") y pasa a Listos");
         }
     }
 
@@ -233,7 +268,7 @@ public class Kernel implements SistemaOperativo {
         evento(ciclo, nombreComputador + " selecciona el proceso " + elegido.getEtiqueta() + " (" + planificador.describir() + ")");
     }
 
-    /** Ejecuta la instrucción del proceso en CPU; si pide E/S lo bloquea, si era la última lo termina. */
+    /** Ejecuta la instrucción del proceso en CPU; si lo bloquea (E/S o semáforo) libera la CPU, si era la última lo termina. */
     private void ejecutarInstruccion(long ciclo) {
         PCB pcb = enEjecucion;
         Instruccion instruccion = pcb.instruccionActual();
@@ -247,18 +282,152 @@ public class Kernel implements SistemaOperativo {
         cpu.ejecutarInstruccion(instruccion.modo(), instruccion.toString());
         pcb.avanzarContador();
         ciclosEnCPU++;
-        if (instruccion.tipo() == TipoInstruccion.SOLICITAR_ES) {
-            int duracion = ((ProgramaIOBound) pcb.getPrograma()).getDuracionES();
-            liberarCPU();
-            pcb.restaurarPrioridad();
-            pcb.bloquear(MotivoBloqueo.ENTRADA_SALIDA, duracion + " ciclos en DMA", ciclo);
-            bloqueados.agregarFinal(pcb);
-            dma.solicitar(pcb.getId(), pcb.getEtiqueta(), duracion, "E/S");
-            evento(ciclo, "Proceso " + pcb.getEtiqueta() + " se bloquea por E/S (" + duracion + " ciclos)");
-        } else if (pcb.programaTerminado()) {
+        boolean sigueEnCPU = true;
+        switch (instruccion.tipo()) {
+            case SOLICITAR_ES -> {
+                solicitarES(pcb, ciclo);
+                sigueEnCPU = false;
+            }
+            case SEM_WAIT -> sigueEnCPU = semWait(pcb, instruccion.semaforo(), ciclo);
+            case SEM_SIGNAL -> semSignal(pcb, instruccion.semaforo(), ciclo);
+            case INSERTAR -> insertar(pcb, ciclo);
+            case EXTRAER -> extraer(pcb, ciclo);
+            default -> {
+            }
+        }
+        if (sigueEnCPU && pcb.programaTerminado()) {
             liberarCPU();
             terminarProceso(pcb, ciclo, false);
         }
+    }
+
+    /** Bloquea al proceso por E/S y encarga la operación al DMA. */
+    private void solicitarES(PCB pcb, long ciclo) {
+        int duracion = ((ProgramaIOBound) pcb.getPrograma()).getDuracionES();
+        liberarCPU();
+        pcb.restaurarPrioridad();
+        pcb.bloquear(MotivoBloqueo.ENTRADA_SALIDA, duracion + " ciclos en DMA", ciclo);
+        bloqueados.agregarFinal(pcb);
+        dma.solicitar(pcb.getId(), pcb.getEtiqueta(), duracion, "E/S");
+        evento(ciclo, "Proceso " + pcb.getEtiqueta() + " se bloquea por E/S (" + duracion + " ciclos)");
+    }
+
+    private boolean semWait(PCB pcb, RolSemaforo rol, long ciclo) {
+        Buffer buffer = bufferDe(pcb);
+        if (buffer == null) {
+            Debug.error(origen, pcb.getEtiqueta() + " ejecuta semWait sin buffer");
+            return true;
+        }
+        if (buffer.esperar(rol, pcb)) {
+            return true;
+        }
+        String semaforo = "semáforo '" + rol.getNombre() + "' de " + buffer.getNombre();
+        liberarCPU();
+        pcb.restaurarPrioridad();
+        pcb.bloquear(MotivoBloqueo.SEMAFORO, semaforo, ciclo);
+        bloqueados.agregarFinal(pcb);
+        evento(ciclo, "Proceso " + pcb.getEtiqueta() + " se bloquea en el " + semaforo);
+        return false;
+    }
+
+    private void semSignal(PCB pcb, RolSemaforo rol, long ciclo) {
+        Buffer buffer = bufferDe(pcb);
+        if (buffer == null) {
+            Debug.error(origen, pcb.getEtiqueta() + " ejecuta semSignal sin buffer");
+            return;
+        }
+        senalarYDespertar(buffer, rol, pcb, ciclo);
+    }
+
+    /** Señala el semáforo en nombre del proceso y, si había uno esperando, le avisa por interrupción. */
+    private void senalarYDespertar(Buffer buffer, RolSemaforo rol, PCB pcb, long ciclo) {
+        PCB despertado = buffer.senalar(rol);
+        if (despertado != null) {
+            String semaforo = "semáforo '" + rol.getNombre() + "' de " + buffer.getNombre();
+            enviarDespertar(despertado, semaforo, ciclo);
+            evento(ciclo, "Proceso " + pcb.getEtiqueta() + " despierta a " + despertado.getEtiqueta() + " (" + semaforo + ")");
+        }
+    }
+
+    private void liberarFichas(PCB pcb, boolean esperabaEnCola, long ciclo) {
+        Buffer buffer = bufferDe(pcb);
+        if (buffer == null) {
+            return;
+        }
+        int ejecutadas = pcb.getContador() - (esperabaEnCola ? 1 : 0);
+        RolSemaforo[] retenidas = ((ProgramaBuffer) pcb.getPrograma()).fichasRetenidas(ejecutadas);
+        if (retenidas.length == 0) {
+            return;
+        }
+        StringBuilder nombres = new StringBuilder();
+        for (RolSemaforo rol : retenidas) {
+            nombres.append(nombres.length() > 0 ? ", " : "").append(rol.getNombre());
+        }
+        evento(ciclo, "Proceso " + pcb.getEtiqueta() + " libera al morir sus fichas en " + buffer.getNombre() + ": " + nombres);
+        for (RolSemaforo rol : retenidas) {
+            senalarYDespertar(buffer, rol, pcb, ciclo);
+        }
+    }
+
+    /** Avisa por interrupción al computador del proceso dormido; llegue de donde llegue, entra por la misma vía. */
+    private void enviarDespertar(PCB despertado, String semaforo, long ciclo) {
+        LineaInterrupciones[] todas = lineas;
+        int destino = despertado.getComputador();
+        if (todas == null || destino < 0 || destino >= todas.length) {
+            Debug.error(origen, "no hay línea de interrupciones para despertar a " + despertado.getEtiqueta()
+                    + " en el computador " + destino);
+            return;
+        }
+        todas[destino].registrar(new Interrupcion(TipoInterrupcion.SEMAFORO_SIGNAL, despertado.getId(),
+                despertado.getEtiqueta(), semaforo, ciclo));
+    }
+
+    /** Agrega un elemento al buffer del proceso (productor). */
+    private void insertar(PCB pcb, long ciclo) {
+        Buffer buffer = bufferDe(pcb);
+        int elemento = buffer == null ? -1 : buffer.insertar();
+        if (elemento < 0) {
+            Debug.error(origen, pcb.getEtiqueta() + " no pudo insertar en su buffer");
+            return;
+        }
+        pcb.registrarElemento();
+        evento(ciclo, "Proceso " + pcb.getEtiqueta() + " inserta el elemento " + elemento + " en " + buffer.getNombre());
+    }
+
+    /** Saca un elemento del buffer del proceso (consumidor). */
+    private void extraer(PCB pcb, long ciclo) {
+        Buffer buffer = bufferDe(pcb);
+        int elemento = buffer == null ? -1 : buffer.extraer();
+        if (elemento < 0) {
+            Debug.error(origen, pcb.getEtiqueta() + " no pudo extraer de su buffer");
+            return;
+        }
+        pcb.registrarElemento();
+        evento(ciclo, "Proceso " + pcb.getEtiqueta() + " extrae el elemento " + elemento + " de " + buffer.getNombre());
+    }
+
+    /** Buffer con el que trabaja el proceso, o null si no usa buffer o no existe. */
+    private Buffer bufferDe(PCB pcb) {
+        RegistroBuffers registro = buffers;
+        if (registro == null || !(pcb.getPrograma() instanceof ProgramaBuffer programa)) {
+            return null;
+        }
+        return registro.buscar(programa.getBuffer());
+    }
+
+    /** Comprueba que el buffer del proceso exista y esté en este computador (el acceso remoto llega en la etapa 6). */
+    private boolean bufferAceptable(PCB pcb) {
+        Buffer buffer = bufferDe(pcb);
+        if (buffer == null) {
+            Debug.error(origen, pcb.getEtiqueta() + " usa un buffer que no existe; se rechaza");
+            return false;
+        }
+        if (buffer.getAnfitrion() != idComputador) {
+            Debug.error(origen, pcb.getEtiqueta() + " usa el buffer " + buffer.getNombre() + " del computador "
+                    + buffer.getAnfitrion() + ": el acceso remoto estará disponible en la etapa 6; se rechaza");
+            return false;
+        }
+        return true;
     }
 
     /** Guarda el contexto del proceso en CPU y comprueba que los registros coinciden con su PCB. */
@@ -272,16 +441,22 @@ public class Kernel implements SistemaOperativo {
         ciclosEnCPU = 0;
     }
 
-    /** Saca al proceso de donde esté (CPU, cola o DMA) y lo termina por deadline vencido. */
+    /** Saca al proceso de donde esté (CPU, cola, DMA o cola de un semáforo) y lo termina por deadline vencido. */
     private void terminarPorDeadline(PCB pcb, long ciclo) {
+        boolean esperabaEnCola = false;
         if (pcb == enEjecucion) {
             liberarCPU();
-        } else if (!nuevos.eliminar(pcb) && !listos.eliminar(pcb) && bloqueados.eliminar(pcb)
-                && pcb.getMotivoBloqueo() == MotivoBloqueo.ENTRADA_SALIDA) {
-            dma.cancelar(pcb.getId());
+        } else if (!nuevos.eliminar(pcb) && !listos.eliminar(pcb) && bloqueados.eliminar(pcb)) {
+            if (pcb.getMotivoBloqueo() == MotivoBloqueo.ENTRADA_SALIDA) {
+                dma.cancelar(pcb.getId());
+            } else if (pcb.getMotivoBloqueo() == MotivoBloqueo.SEMAFORO) {
+                Buffer buffer = bufferDe(pcb);
+                esperabaEnCola = buffer != null && buffer.quitarBloqueado(pcb);
+            }
         }
         evento(ciclo, "Proceso " + pcb.getEtiqueta() + " alcanza su deadline y es terminado (estaba en "
                 + pcb.getEstado().getNombre() + ")");
+        liberarFichas(pcb, esperabaEnCola, ciclo);
         terminarProceso(pcb, ciclo, true);
     }
 

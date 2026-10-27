@@ -6,6 +6,7 @@ import avilaos.config.ConfiguracionSistema;
 import avilaos.enums.PoliticaTipo;
 import avilaos.estructuras.ListaEnlazada;
 import avilaos.estructuras.Nodo;
+import avilaos.hardware.LineaInterrupciones;
 import avilaos.hardware.ObservadorReloj;
 import avilaos.hardware.Reloj;
 import avilaos.log.Debug;
@@ -13,6 +14,10 @@ import avilaos.log.LogEventos;
 import avilaos.so.DatosProceso;
 import avilaos.so.FabricaProcesos;
 import avilaos.so.PCB;
+import avilaos.so.programas.ProgramaBuffer;
+import avilaos.sync.Buffer;
+import avilaos.sync.DatosBuffer;
+import avilaos.sync.RegistroBuffers;
 
 /** ÁvilaOS completo: reloj global, computadores y puerta de entrada para crear procesos y cambiar parámetros. */
 public class Cluster implements ObservadorReloj {
@@ -24,6 +29,7 @@ public class Cluster implements ObservadorReloj {
     private final Reloj reloj;
     private final Computador[] computadores;
     private final ListaEnlazada<ObservadorReloj> observadores = new ListaEnlazada<>();
+    private final RegistroBuffers buffers = new RegistroBuffers();
     private final CondicionesParada parada;
     private volatile int maxCiclos;
     private volatile boolean inactivo;
@@ -44,8 +50,54 @@ public class Cluster implements ObservadorReloj {
             computadores[i].conectar(reloj, faseES, faseCPU);
             nodo = nodo.getSiguiente();
         }
+        LineaInterrupciones[] lineas = new LineaInterrupciones[computadores.length];
+        for (int i = 0; i < computadores.length; i++) {
+            lineas[i] = computadores[i].getLinea();
+        }
+        for (Computador c : computadores) {
+            c.getKernel().conectarSincronizacion(buffers, lineas);
+        }
+        Nodo<DatosBuffer> nodoBuffer = config.getBuffers().getCabeza();
+        while (nodoBuffer != null) {
+            crearBuffer(nodoBuffer.getDato());
+            nodoBuffer = nodoBuffer.getSiguiente();
+        }
         reloj.agregarObservador(this);
-        Debug.ok(ORIGEN, "clúster listo con " + computadores.length + " computadores; fases: " + reloj.describirFases());
+        Debug.ok(ORIGEN, "clúster listo con " + computadores.length + " computadores y " + buffers.cantidad()
+                + " buffers; fases: " + reloj.describirFases());
+    }
+
+    /** Crea un buffer en su computador anfitrión y le reserva en la RAM tanta memoria como su capacidad. */
+    public Buffer crearBuffer(DatosBuffer datos) {
+        if (datos == null || datos.nombre() == null || datos.nombre().isBlank()) {
+            Debug.error(ORIGEN, "buffer sin nombre");
+            return null;
+        }
+        String nombre = datos.nombre().trim();
+        if (datos.capacidad() <= 0 || datos.capacidad() > ConfiguracionSistema.MAX_CAPACIDAD_BUFFER) {
+            Debug.error(ORIGEN, "buffer '" + nombre + "': capacidad " + datos.capacidad() + " fuera de 1.."
+                    + ConfiguracionSistema.MAX_CAPACIDAD_BUFFER);
+            return null;
+        }
+        if (!existe(datos.computador())) {
+            Debug.error(ORIGEN, "buffer '" + nombre + "': el computador anfitrión " + datos.computador() + " no existe");
+            return null;
+        }
+        if (buffers.buscar(nombre) != null) {
+            Debug.error(ORIGEN, "ya existe un buffer llamado '" + nombre + "'");
+            return null;
+        }
+        Computador anfitrion = computadores[datos.computador()];
+        if (!anfitrion.getRam().reservar(Buffer.duenoEnRam(nombre), datos.capacidad())) {
+            Debug.error(ORIGEN, "buffer '" + nombre + "': no caben " + datos.capacidad() + " de memoria en la RAM del "
+                    + anfitrion.getNombre() + " (libre " + anfitrion.getRam().getLibre() + ")");
+            return null;
+        }
+        Buffer buffer = new Buffer(nombre, datos.capacidad(), datos.computador());
+        buffers.agregar(buffer);
+        log.registrar(reloj.getCiclo(), "Buffer " + nombre + " creado en el " + anfitrion.getNombre() + " (capacidad "
+                + datos.capacidad() + ", RAM " + anfitrion.getRam().getUsada() + "/" + anfitrion.getRam().getCapacidad() + ")");
+        return buffer;
     }
 
     /** Crea los procesos de la carga inicial de la configuración. Devuelve cuántos se crearon. */
@@ -65,11 +117,6 @@ public class Cluster implements ObservadorReloj {
     /** Crea un proceso y lo entrega al computador indicado, o al de menor carga si es automático. */
     public PCB crearProceso(DatosProceso datos) {
         long ciclo = reloj.getCiclo();
-        if (datos != null && datos.tipo() != null && datos.tipo().usaBuffer()) {
-            Debug.info(ORIGEN, "'" + datos.nombre() + "' es " + datos.tipo().getNombre()
-                    + ": productores y consumidores estarán disponibles en la etapa 5; se omite");
-            return null;
-        }
         if (datos != null && datos.computador() >= computadores.length) {
             Debug.error(ORIGEN, "'" + datos.nombre() + "': el computador " + datos.computador() + " no existe (0.."
                     + (computadores.length - 1) + " o -1)");
@@ -81,14 +128,17 @@ public class Cluster implements ObservadorReloj {
         }
         Computador destino;
         if (datos.computador() == DatosProceso.ASIGNACION_AUTOMATICA) {
-            destino = elegirComputador(pcb.getMemoria());
+            boolean conBuffer = pcb.getTipo().usaBuffer();
+            destino = conBuffer ? anfitrionDelBuffer(pcb) : elegirComputador(pcb.getMemoria());
             if (destino == null) {
-                Debug.error(ORIGEN, pcb.getEtiqueta() + " pide " + pcb.getMemoria() + " de memoria y no cabe en ningún computador");
+                Debug.error(ORIGEN, pcb.getEtiqueta() + " no tiene computador donde ejecutarse (pide " + pcb.getMemoria()
+                        + " de memoria; si usa buffer, este debe existir)");
                 return null;
             }
             pcb.asignarComputador(destino.getId());
             log.registrar(ciclo, "ÁvilaOS asigna " + pcb.getEtiqueta() + " al " + destino.getNombre()
-                    + " (menor carga: " + destino.carga() + " procesos, " + destino.getRam().getLibre() + " de RAM libre)");
+                    + (conBuffer ? " (anfitrión de su buffer)"
+                    : " (menor carga: " + destino.carga() + " procesos, " + destino.getRam().getLibre() + " de RAM libre)"));
         } else {
             destino = computadores[datos.computador()];
         }
@@ -97,6 +147,15 @@ public class Cluster implements ObservadorReloj {
         }
         inactivo = false;
         return pcb;
+    }
+
+    /** Computador que aloja el buffer del productor o consumidor; null si el buffer no existe. */
+    private Computador anfitrionDelBuffer(PCB pcb) {
+        if (!(pcb.getPrograma() instanceof ProgramaBuffer programa)) {
+            return null;
+        }
+        Buffer buffer = buffers.buscar(programa.getBuffer());
+        return buffer == null ? null : computadores[buffer.getAnfitrion()];
     }
 
     /** Busca el computador menos cargado para el proceso nuevo. */
@@ -316,6 +375,11 @@ public class Cluster implements ObservadorReloj {
     /** Indica si en el último ciclo todos los computadores estaban sin procesos y ociosos. */
     public boolean isInactivo() {
         return inactivo;
+    }
+
+    /** Registro con los buffers creados en el clúster. */
+    public RegistroBuffers getBuffers() {
+        return buffers;
     }
 
     public LogEventos getLog() {
