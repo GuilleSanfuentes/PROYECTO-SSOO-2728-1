@@ -21,7 +21,7 @@
     "buffers": "Lista de buffers del productor-consumidor. Cada buffer ocupa en la RAM de su anfitrión tanto como su capacidad",
     "buffers[].nombre": "Texto no vacío y único (ej. B1). Es el nombre que usan los procesos en su campo buffer",
     "buffers[].capacidad": "Entero 1..10000. Cantidad máxima de elementos que caben en el buffer",
-    "buffers[].computador": "Número del computador anfitrión (0, 1, ...). El acceso desde otro computador es remoto y paga latenciaRed",
+    "buffers[].computador": "Número del computador anfitrión (0, 1, ...). El acceso desde otro computador es remoto y pagará latenciaRed (etapa 6); hasta entonces un productor o consumidor de otro computador se rechaza con ERROR",
 
     "procesos": "Carga inicial de procesos. Los inválidos se omiten con ERROR",
     "procesos[].nombre": "Texto no vacío",
@@ -31,7 +31,7 @@
     "procesos[].deadline": "Entero > 0. Ciclos de reloj antes de que el proceso sea terminado",
     "procesos[].computador": "Número del computador (0, 1, ...) o -1 para asignación automática: ÁvilaOS lo envía al computador con menos procesos vivos; en empate, al de más RAM libre; nunca a uno cuya RAM total sea menor que la memoria del proceso. Si se omite vale 0",
     "procesos[] (admisión)": "Un proceso pasa de Nuevos a Listos solo si cabe en la RAM de su computador. Entre los que esperan entra primero el de mejor prioridad; en empate, el que llegó antes. Un proceso más grande que la RAM total de su computador se rechaza",
-    "procesos[] (etapa actual)": "PRODUCTOR y CONSUMIDOR se aceptan en el archivo pero no se crean hasta la etapa 5 (semáforos y buffers)",
+    "procesos[] (productor y consumidor)": "Usan el buffer con los semáforos vacío, lleno y mutex (Stallings). Un productor o consumidor debe ir al computador anfitrión de su buffer; con computador -1 ÁvilaOS lo envía ahí. Si el buffer no existe o es de otro computador se rechaza con ERROR (acceso remoto: etapa 6). Un proceso bloqueado en un semáforo despierta por interrupción, en el ciclo siguiente al semSignal",
     "procesos[].instrucciones": "Solo CPU_BOUND e IO_BOUND. Entero > 0",
     "procesos[].cadaCiclosES": "Solo IO_BOUND. Cada cuántas instrucciones pide E/S",
     "procesos[].duracionES": "Solo IO_BOUND. Ciclos que dura cada E/S (la atiende el DMA sin ocupar la CPU)",
