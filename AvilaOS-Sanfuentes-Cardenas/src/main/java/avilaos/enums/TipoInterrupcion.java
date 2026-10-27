@@ -3,7 +3,8 @@ package avilaos.enums;
 /** Tipos de interrupción que el hardware envía a la CPU. */
 public enum TipoInterrupcion {
     FIN_ES("Fin de E/S"),
-    FIN_RED("Fin de acceso remoto");
+    FIN_RED("Fin de acceso remoto"),
+    SEMAFORO_SIGNAL("Despertar por semáforo");
 
     private final String nombre;
 
