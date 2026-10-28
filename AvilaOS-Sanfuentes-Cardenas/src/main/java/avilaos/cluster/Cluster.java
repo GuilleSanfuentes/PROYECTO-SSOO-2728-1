@@ -14,7 +14,6 @@ import avilaos.log.LogEventos;
 import avilaos.so.DatosProceso;
 import avilaos.so.FabricaProcesos;
 import avilaos.so.PCB;
-import avilaos.so.programas.ProgramaBuffer;
 import avilaos.sync.Buffer;
 import avilaos.sync.DatosBuffer;
 import avilaos.sync.RegistroBuffers;
@@ -56,6 +55,7 @@ public class Cluster implements ObservadorReloj {
         }
         for (Computador c : computadores) {
             c.getKernel().conectarSincronizacion(buffers, lineas);
+            c.getKernel().conectarRed(c.getRed(), config.getLatenciaRed());
         }
         Nodo<DatosBuffer> nodoBuffer = config.getBuffers().getCabeza();
         while (nodoBuffer != null) {
@@ -128,17 +128,15 @@ public class Cluster implements ObservadorReloj {
         }
         Computador destino;
         if (datos.computador() == DatosProceso.ASIGNACION_AUTOMATICA) {
-            boolean conBuffer = pcb.getTipo().usaBuffer();
-            destino = conBuffer ? anfitrionDelBuffer(pcb) : elegirComputador(pcb.getMemoria());
+            destino = elegirComputador(pcb.getMemoria());
             if (destino == null) {
                 Debug.error(ORIGEN, pcb.getEtiqueta() + " no tiene computador donde ejecutarse (pide " + pcb.getMemoria()
-                        + " de memoria; si usa buffer, este debe existir)");
+                        + " de memoria)");
                 return null;
             }
             pcb.asignarComputador(destino.getId());
             log.registrar(ciclo, "ÁvilaOS asigna " + pcb.getEtiqueta() + " al " + destino.getNombre()
-                    + (conBuffer ? " (anfitrión de su buffer)"
-                    : " (menor carga: " + destino.carga() + " procesos, " + destino.getRam().getLibre() + " de RAM libre)"));
+                    + " (menor carga: " + destino.carga() + " procesos, " + destino.getRam().getLibre() + " de RAM libre)");
         } else {
             destino = computadores[datos.computador()];
         }
@@ -147,15 +145,6 @@ public class Cluster implements ObservadorReloj {
         }
         inactivo = false;
         return pcb;
-    }
-
-    /** Computador que aloja el buffer del productor o consumidor; null si el buffer no existe. */
-    private Computador anfitrionDelBuffer(PCB pcb) {
-        if (!(pcb.getPrograma() instanceof ProgramaBuffer programa)) {
-            return null;
-        }
-        Buffer buffer = buffers.buscar(programa.getBuffer());
-        return buffer == null ? null : computadores[buffer.getAnfitrion()];
     }
 
     /** Busca el computador menos cargado para el proceso nuevo. */
