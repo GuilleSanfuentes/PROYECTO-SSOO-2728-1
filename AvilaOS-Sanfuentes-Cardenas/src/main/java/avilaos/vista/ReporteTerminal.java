@@ -12,6 +12,9 @@ import avilaos.hardware.CPU;
 import avilaos.hardware.ControladorEspera;
 import avilaos.hardware.RAM;
 import avilaos.log.Debug;
+import avilaos.metricas.CalculadorMetricas;
+import avilaos.metricas.Metricas;
+import avilaos.metricas.MetricasBuffer;
 import avilaos.so.DatosProceso;
 import avilaos.so.PCB;
 import avilaos.sync.Buffer;
@@ -147,9 +150,51 @@ public final class ReporteTerminal {
             sb.append(lineaDispositivo(c.getDma())).append('\n');
         }
         sb.append(lineasBuffers(cluster));
+        sb.append('\n').append(tablaMetricas(cluster));
         sb.append('\n').append(tablaProcesos(cluster.todosLosProcesos()));
         sb.append(separador());
         Debug.bloque(sb.toString());
+    }
+
+    /** Métricas acumuladas por computador y globales, y las de productor-consumidor de cada buffer. */
+    public static String tablaMetricas(Cluster cluster) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(" MÉTRICAS acumuladas hasta el ciclo ").append(cluster.getReloj().getCiclo()).append('\n');
+        sb.append(String.format(" %-14s %-12s %-19s %-12s %-12s %-10s %-9s %s%n", "Ámbito", "Throughput", "CPU (usu+SO)",
+                "T.respuesta", "Deadlines", "Equidad", "Terminó", "Vencidos / Vivos"));
+        for (int i = 0; i < cluster.cantidadComputadores(); i++) {
+            sb.append(filaMetricas(CalculadorMetricas.computador(cluster, i)));
+        }
+        sb.append(filaMetricas(CalculadorMetricas.global(cluster)));
+        sb.append(" Throughput = procesos terminados bien por ciclo | T.respuesta = ciclos de llegada a primera ejecución\n");
+        sb.append(" Deadlines = % de terminados que cumplieron | Equidad = índice de Jain sobre (tiempo de retorno / instrucciones)\n");
+        ListaEnlazada<MetricasBuffer> buffers = CalculadorMetricas.buffers(cluster);
+        if (!buffers.estaVacia()) {
+            sb.append('\n').append(String.format(" %-8s %-11s %-11s %-9s %s%n", "Buffer", "Producidos", "Consumidos", "Procesos",
+                    "Bloqueado en semáforos (promedio por proceso)"));
+            Nodo<MetricasBuffer> nodo = buffers.getCabeza();
+            while (nodo != null) {
+                MetricasBuffer m = nodo.getDato();
+                sb.append(String.format(" %-8s %-11d %-11d %-9d %s%n", m.nombre(), m.producidos(), m.consumidos(), m.procesos(),
+                        m.bloqueadoPromedio() < 0 ? "n/d" : String.format("%.2f ciclos", m.bloqueadoPromedio())));
+                nodo = nodo.getSiguiente();
+            }
+        }
+        return sb.toString();
+    }
+
+    /** Fila de la tabla de métricas; n/d cuando aún no hay datos. */
+    private static String filaMetricas(Metricas m) {
+        return String.format(" %-14s %-12s %-19s %-12s %-12s %-10s %-9d %d / %d%n", m.nombre(),
+                String.format("%.4f", m.throughput()),
+                String.format("%.1f%% (%.1f+%.1f)", m.utilizacion(), m.porcentajeUsuario(), m.porcentajeSO()),
+                dato(m.tiempoRespuesta(), "%.2f"), m.cumplimiento() < 0 ? "n/d" : String.format("%.1f%%", m.cumplimiento()),
+                dato(m.equidad(), "%.3f"), m.terminadosOk(), m.vencidos(), m.vivos());
+    }
+
+    /** Número con el formato dado, o n/d si no hay dato. */
+    private static String dato(double valor, String formato) {
+        return valor < 0 ? "n/d" : String.format(formato, valor);
     }
 
     /** Lista del tipo [P1-H1 p2 dl40, P5-H1 (E/S: 4 ciclos en DMA)]. */
