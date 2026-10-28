@@ -10,7 +10,7 @@
     "simulacion.apagadoInactividadActivo": "true o false. Si es true, la simulación se apaga sola cuando TODOS los computadores llevan apagadoInactividadSegundos sin procesos (ni en Nuevos, Listos, CPU ni Bloqueados) y con la CPU ociosa (true)",
     "simulacion.apagadoInactividadSegundos": "Entero 1..86400. Segundos seguidos de inactividad para apagar; las pausas no cuentan y crear un proceso reinicia la cuenta (40)",
     "simulacion (parada)": "maxCiclos, limiteTiempo y apagadoInactividad se combinan: la simulación se detiene con la primera condición que se cumpla, o con el comando stop",
-    "simulacion.latenciaRed": "Entero 0..1000. Ciclos que se bloquea un proceso en cada inserción o extracción sobre un buffer de otro computador (2)",
+    "simulacion.latenciaRed": "Entero 0..1000. Ciclos que se bloquea un proceso en cada inserción o extracción sobre un buffer de otro computador; 0 = el acceso remoto no espera (2)",
     "simulacion.envejecimientoCadaCiclos": "Entero 0..100000. Cada cuántos ciclos en Listos mejora en 1 la prioridad de un proceso; 0 = sin envejecimiento (10)",
 
     "computadores": "Lista con un objeto por computador. Mínimo 2, máximo 8. El primero es el computador 0, el segundo el 1, ...",
@@ -21,7 +21,7 @@
     "buffers": "Lista de buffers del productor-consumidor. Cada buffer ocupa en la RAM de su anfitrión tanto como su capacidad",
     "buffers[].nombre": "Texto no vacío y único (ej. B1). Es el nombre que usan los procesos en su campo buffer",
     "buffers[].capacidad": "Entero 1..10000. Cantidad máxima de elementos que caben en el buffer",
-    "buffers[].computador": "Número del computador anfitrión (0, 1, ...). El acceso desde otro computador es remoto y pagará latenciaRed (etapa 6); hasta entonces un productor o consumidor de otro computador se rechaza con ERROR",
+    "buffers[].computador": "Número del computador anfitrión (0, 1, ...). El acceso desde otro computador es remoto: cada inserción o extracción bloquea al proceso latenciaRed ciclos (motivo Red) y la operación se aplica al terminar la espera",
 
     "procesos": "Carga inicial de procesos. Los inválidos se omiten con ERROR",
     "procesos[].nombre": "Texto no vacío",
@@ -31,7 +31,7 @@
     "procesos[].deadline": "Entero > 0. Ciclos de reloj antes de que el proceso sea terminado",
     "procesos[].computador": "Número del computador (0, 1, ...) o -1 para asignación automática: ÁvilaOS lo envía al computador con menos procesos vivos; en empate, al de más RAM libre; nunca a uno cuya RAM total sea menor que la memoria del proceso. Si se omite vale 0",
     "procesos[] (admisión)": "Un proceso pasa de Nuevos a Listos solo si cabe en la RAM de su computador. Entre los que esperan entra primero el de mejor prioridad; en empate, el que llegó antes. Un proceso más grande que la RAM total de su computador se rechaza",
-    "procesos[] (productor y consumidor)": "Usan el buffer con los semáforos vacío, lleno y mutex (Stallings). Un productor o consumidor debe ir al computador anfitrión de su buffer; con computador -1 ÁvilaOS lo envía ahí. Si el buffer no existe o es de otro computador se rechaza con ERROR (acceso remoto: etapa 6). Un proceso bloqueado en un semáforo despierta por interrupción, en el ciclo siguiente al semSignal",
+    "procesos[] (productor y consumidor)": "Usan el buffer con los semáforos vacío, lleno y mutex (Stallings). Un productor o consumidor puede ir a cualquier computador: si no es el anfitrión de su buffer el acceso es remoto; con computador -1 ÁvilaOS lo envía al de menor carga. Si el buffer no existe se rechaza con ERROR. Con latenciaRed 0 el acceso remoto se comporta como local. Un proceso bloqueado en un semáforo despierta por interrupción, en el ciclo siguiente al semSignal",
     "procesos[].instrucciones": "Solo CPU_BOUND e IO_BOUND. Entero > 0",
     "procesos[].cadaCiclosES": "Solo IO_BOUND. Cada cuántas instrucciones pide E/S",
     "procesos[].duracionES": "Solo IO_BOUND. Ciclos que dura cada E/S (la atiende el DMA sin ocupar la CPU)",
