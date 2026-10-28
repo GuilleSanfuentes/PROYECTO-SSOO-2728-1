@@ -320,7 +320,7 @@ public final class PruebasPaso4 {
         c.apagar();
     }
 
-    /** El clúster se arma desde avilaosconfigs.json y crea su carga inicial (sin productores/consumidores aún). */
+    /** El clúster se arma desde avilaosconfigs.json y crea su carga inicial (los de buffer remoto esperan a la etapa 6). */
     private static void probarConfiguracionReal() {
         r.grupo("Clúster armado desde avilaosconfigs.json");
         boolean dl = Debug.isActivo();
@@ -329,12 +329,13 @@ public final class PruebasPaso4 {
         int esperados = 0;
         Nodo<DatosProceso> nodo = config.getProcesos().getCabeza();
         while (nodo != null) {
-            esperados += nodo.getDato().tipo().usaBuffer() ? 0 : 1;
+            esperados += seCreaConBufferLocal(config, nodo.getDato()) ? 1 : 0;
             nodo = nodo.getSiguiente();
         }
         int creados = c.cargarProcesosIniciales();
         r.verificar("crea un computador por cada uno configurado", c.cantidadComputadores() == config.getComputadores().tamano(), "");
-        r.verificar("crea los " + esperados + " procesos iniciales que no usan buffer", creados == esperados, creados + " creados");
+        r.verificar("crea los " + esperados + " procesos iniciales posibles (los de buffer remoto esperan a la etapa 6)",
+                creados == esperados, creados + " creados");
         Debug.setActivo(false);
         c.getReloj().ejecutarCiclos(10);
         Debug.setActivo(dl);
@@ -352,6 +353,21 @@ public final class PruebasPaso4 {
             r.seccion(" " + ReporteTerminal.lineaRAM(c.getComputador(i).getRam()));
         }
         c.apagar();
+    }
+
+    /** Sin buffer siempre se crea; con buffer, solo si va al computador anfitrión de ese buffer o es automático. */
+    private static boolean seCreaConBufferLocal(ConfiguracionSistema config, DatosProceso datos) {
+        if (!datos.tipo().usaBuffer()) {
+            return true;
+        }
+        Nodo<DatosBuffer> buffer = config.getBuffers().getCabeza();
+        while (buffer != null) {
+            if (buffer.getDato().nombre().equals(datos.buffer().trim())) {
+                return datos.computador() == AUTO || datos.computador() == buffer.getDato().computador();
+            }
+            buffer = buffer.getSiguiente();
+        }
+        return false;
     }
 
     private static boolean ramIntegra(Cluster c) {

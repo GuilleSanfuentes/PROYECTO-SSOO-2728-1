@@ -1,5 +1,6 @@
 package avilaos.so.programas;
 
+import avilaos.enums.RolSemaforo;
 import avilaos.log.Debug;
 
 /** Base de productor y consumidor: repite N veces un ciclo de K instrucciones de cálculo y 5 de SO. */
@@ -39,6 +40,17 @@ public abstract class ProgramaBuffer implements Programa {
 
     /** Instrucción en la posición indicada dentro del ciclo de un elemento. */
     protected abstract Instruccion instruccionEnElemento(int posicion);
+
+    /** Semáforos a señalar, en orden, si el proceso abandona tras ejecutar esa cantidad de instrucciones. */
+    public RolSemaforo[] fichasRetenidas(int ejecutadas) {
+        if (ejecutadas <= 0) {
+            return new RolSemaforo[0];
+        }
+        return fichasEnPosicion(ejecutadas % largoPorElemento());
+    }
+
+    /** Fichas que retiene quien lleva ejecutadas esas instrucciones del elemento actual. */
+    protected abstract RolSemaforo[] fichasEnPosicion(int ejecutadas);
 
     /** Identificador del buffer con el que trabaja. */
     public String getBuffer() {

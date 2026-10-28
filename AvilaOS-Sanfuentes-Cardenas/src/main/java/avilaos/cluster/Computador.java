@@ -60,6 +60,11 @@ public class Computador {
         return nombre;
     }
 
+    /** Línea por la que llegan a este computador las interrupciones de sus dispositivos y de los semáforos. */
+    public LineaInterrupciones getLinea() {
+        return linea;
+    }
+
     public CPU getCpu() {
         return cpu;
     }

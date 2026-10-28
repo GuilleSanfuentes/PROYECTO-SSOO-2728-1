@@ -14,6 +14,8 @@ import avilaos.hardware.RAM;
 import avilaos.log.Debug;
 import avilaos.so.DatosProceso;
 import avilaos.so.PCB;
+import avilaos.sync.Buffer;
+import avilaos.sync.EstadoBuffer;
 
 /** Reportes gráficos en caracteres para la terminal. Solo se imprimen con el debugger activo. */
 public final class ReporteTerminal {
@@ -92,8 +94,40 @@ public final class ReporteTerminal {
             sb.append("   Bloqueados ").append(listaCorta(k.getBloqueados())).append('\n');
             sb.append("   Terminados ").append(listaCorta(k.getTerminados())).append('\n');
         }
+        sb.append(lineasBuffers(cluster));
         sb.append(separador());
         return sb.toString();
+    }
+
+    /** Un bloque por buffer: elementos, semáforos, contadores y procesos bloqueados en cada semáforo. */
+    public static String lineasBuffers(Cluster cluster) {
+        StringBuilder sb = new StringBuilder();
+        Nodo<Buffer> nodo = cluster.getBuffers().copiar().getCabeza();
+        while (nodo != null) {
+            EstadoBuffer e = nodo.getDato().estado();
+            sb.append(String.format(" Buffer %-4s (Computador %d) %s %d/%d | vacío=%d lleno=%d mutex=%d | producidos %d, consumidos %d%n",
+                    e.nombre(), e.anfitrion(), barra(e.elementos(), e.capacidad()), e.elementos(), e.capacidad(),
+                    e.valorVacio(), e.valorLleno(), e.valorMutex(), e.producidos(), e.consumidos()));
+            agregarBloqueados(sb, "vacío", e.bloqueadosVacio());
+            agregarBloqueados(sb, "lleno", e.bloqueadosLleno());
+            agregarBloqueados(sb, "mutex", e.bloqueadosMutex());
+            nodo = nodo.getSiguiente();
+        }
+        return sb.toString();
+    }
+
+    /** Agrega la línea de procesos bloqueados en un semáforo, si hay alguno. */
+    private static void agregarBloqueados(StringBuilder sb, String semaforo, ListaEnlazada<PCB> procesos) {
+        if (procesos.estaVacia()) {
+            return;
+        }
+        sb.append("   Bloqueados en '").append(semaforo).append("': [");
+        Nodo<PCB> nodo = procesos.getCabeza();
+        while (nodo != null) {
+            sb.append(nodo.getDato() != procesos.primero() ? ", " : "").append(nodo.getDato().getEtiqueta());
+            nodo = nodo.getSiguiente();
+        }
+        sb.append("]\n");
     }
 
     /** Resumen final de la simulación: hardware de cada computador y tabla de todos los procesos. */
@@ -112,6 +146,7 @@ public final class ReporteTerminal {
             sb.append(lineaRAM(c.getRam())).append('\n');
             sb.append(lineaDispositivo(c.getDma())).append('\n');
         }
+        sb.append(lineasBuffers(cluster));
         sb.append('\n').append(tablaProcesos(cluster.todosLosProcesos()));
         sb.append(separador());
         Debug.bloque(sb.toString());

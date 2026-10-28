@@ -23,6 +23,18 @@ public class ProgramaConsumidor extends ProgramaBuffer {
         };
     }
 
+    /** Fichas que retiene el consumidor según cuántas instrucciones lleva de su elemento. */
+    @Override
+    protected RolSemaforo[] fichasEnPosicion(int ejecutadas) {
+        return switch (ejecutadas) {
+            case 1 -> new RolSemaforo[] {RolSemaforo.LLENO};
+            case 2 -> new RolSemaforo[] {RolSemaforo.MUTEX, RolSemaforo.LLENO};
+            case 3 -> new RolSemaforo[] {RolSemaforo.MUTEX, RolSemaforo.VACIO};
+            case 4 -> new RolSemaforo[] {RolSemaforo.VACIO};
+            default -> new RolSemaforo[0];
+        };
+    }
+
     @Override
     public String descripcion() {
         return "Consumidor en buffer " + getBuffer() + ", " + getElementos() + " elementos, uno cada "
