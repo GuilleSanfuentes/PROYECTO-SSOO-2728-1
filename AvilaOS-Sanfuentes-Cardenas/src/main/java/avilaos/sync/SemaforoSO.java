@@ -30,6 +30,7 @@ public class SemaforoSO {
         this.valor = valorInicial;
     }
 
+    /** semWait: si el semáforo tiene un permiso libre (valor > 0), el proceso lo toma y sigue; si no, espera en una cola FIFO hasta que otro proceso libere uno. */
     public boolean esperar(PCB pcb) {
         if (valor > 0) {
             valor--;
@@ -39,6 +40,7 @@ public class SemaforoSO {
         return false;
     }
 
+    /** semSignal: si hay procesos esperando, entrega el permiso directo al primero de la cola FIFO y lo devuelve para despertarlo; si no, sube el valor y queda un permiso libre (un binario que ya vale 1 da ERROR). */
     public PCB senalar() {
         if (!bloqueados.estaVacia()) {
             return bloqueados.desencolar();

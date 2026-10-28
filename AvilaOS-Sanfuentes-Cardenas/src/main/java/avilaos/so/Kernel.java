@@ -312,6 +312,7 @@ public class Kernel implements SistemaOperativo {
         evento(ciclo, "Proceso " + pcb.getEtiqueta() + " se bloquea por E/S (" + duracion + " ciclos)");
     }
 
+    /** Kernel ejecuta el semWait: le pide el permiso al semáforo; si lo obtiene, el proceso sigue en la CPU; si no, libera la CPU y deja al proceso Bloqueado por semáforo hasta que lo despierten (devuelve false). */
     private boolean semWait(PCB pcb, RolSemaforo rol, long ciclo) {
         Buffer buffer = bufferDe(pcb);
         if (buffer == null) {
@@ -330,6 +331,7 @@ public class Kernel implements SistemaOperativo {
         return false;
     }
 
+    /** Kernel ejecuta el semSignal: libera el permiso en el semáforo; si había alguien esperando, le avisa por interrupción para que despierte en el siguiente ciclo y pase a Listos; si no, el permiso queda libre. Quien señala sigue en la CPU. */
     private void semSignal(PCB pcb, RolSemaforo rol, long ciclo) {
         Buffer buffer = bufferDe(pcb);
         if (buffer == null) {
@@ -349,6 +351,7 @@ public class Kernel implements SistemaOperativo {
         }
     }
 
+    /** Al morir un proceso por deadline, deduce por su Contador qué permisos de semáforo tenía tomados y los devuelve, para que no queden espacios ocupados ni procesos bloqueados para siempre; si murió esperando en la cola, ese permiso no cuenta. */
     private void liberarFichas(PCB pcb, boolean esperabaEnCola, long ciclo) {
         Buffer buffer = bufferDe(pcb);
         if (buffer == null) {
