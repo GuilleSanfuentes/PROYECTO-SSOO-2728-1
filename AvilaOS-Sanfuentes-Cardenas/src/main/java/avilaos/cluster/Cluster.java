@@ -1,5 +1,6 @@
 package avilaos.cluster;
 
+import avilaos.config.ArchivoConfiguracion;
 import avilaos.config.CondicionesParada;
 import avilaos.config.ConfigComputador;
 import avilaos.config.ConfiguracionSistema;
@@ -18,6 +19,7 @@ import avilaos.so.PCB;
 import avilaos.sync.Buffer;
 import avilaos.sync.DatosBuffer;
 import avilaos.sync.RegistroBuffers;
+import java.util.concurrent.Semaphore;
 
 /** ÁvilaOS completo: reloj global, computadores y puerta de entrada para crear procesos y cambiar parámetros. */
 public class Cluster implements ObservadorReloj {
@@ -32,6 +34,9 @@ public class Cluster implements ObservadorReloj {
     private final RegistroBuffers buffers = new RegistroBuffers();
     private final CondicionesParada parada;
     private final RegistroUtilizacion utilizacion;
+    private final ListaEnlazada<DatosBuffer> buffersCreados = new ListaEnlazada<>();
+    private final ListaEnlazada<DatosProceso> procesosCreados = new ListaEnlazada<>();
+    private final Semaphore mutexCreados = new Semaphore(1);
     private volatile int maxCiclos;
     private volatile boolean inactivo;
 
@@ -76,36 +81,54 @@ public class Cluster implements ObservadorReloj {
                 + " buffers; fases: " + reloj.describirFases());
     }
 
-    /** Crea un buffer en su computador anfitrión y le reserva en la RAM tanta memoria como su capacidad. */
-    public Buffer crearBuffer(DatosBuffer datos) {
-        if (datos == null || datos.nombre() == null || datos.nombre().isBlank()) {
-            Debug.error(ORIGEN, "buffer sin nombre");
-            return null;
+    /** Motivo por el que el buffer no se puede crear ahora, o null si los datos son válidos. */
+    public String validarBuffer(DatosBuffer datos) {
+        if (datos == null) {
+            return "datos de buffer nulos";
+        }
+        if (datos.nombre() == null || datos.nombre().isBlank()) {
+            return "el nombre del buffer está vacío";
         }
         String nombre = datos.nombre().trim();
         if (datos.capacidad() <= 0 || datos.capacidad() > ConfiguracionSistema.MAX_CAPACIDAD_BUFFER) {
-            Debug.error(ORIGEN, "buffer '" + nombre + "': capacidad " + datos.capacidad() + " fuera de 1.."
-                    + ConfiguracionSistema.MAX_CAPACIDAD_BUFFER);
-            return null;
+            return "capacidad " + datos.capacidad() + " fuera de 1.." + ConfiguracionSistema.MAX_CAPACIDAD_BUFFER;
         }
         if (!existe(datos.computador())) {
-            Debug.error(ORIGEN, "buffer '" + nombre + "': el computador anfitrión " + datos.computador() + " no existe");
-            return null;
+            return "el computador anfitrión " + datos.computador() + " no existe (0.." + (computadores.length - 1) + ")";
         }
         if (buffers.buscar(nombre) != null) {
-            Debug.error(ORIGEN, "ya existe un buffer llamado '" + nombre + "'");
-            return null;
+            return "ya existe un buffer llamado '" + nombre + "'";
         }
         Computador anfitrion = computadores[datos.computador()];
+        if (!anfitrion.getRam().cabe(datos.capacidad())) {
+            return "no caben " + datos.capacidad() + " de memoria en la RAM del " + anfitrion.getNombre()
+                    + " (libre " + anfitrion.getRam().getLibre() + ")";
+        }
+        return null;
+    }
+
+    /** Crea un buffer en su computador anfitrión y le reserva en la RAM tanta memoria como su capacidad. */
+    public Buffer crearBuffer(DatosBuffer datos) {
+        String error = validarBuffer(datos);
+        if (error != null) {
+            Debug.error(ORIGEN, "buffer rechazado: " + error);
+            return null;
+        }
+        String nombre = datos.nombre().trim();
+        Computador anfitrion = computadores[datos.computador()];
         if (!anfitrion.getRam().reservar(Buffer.duenoEnRam(nombre), datos.capacidad())) {
-            Debug.error(ORIGEN, "buffer '" + nombre + "': no caben " + datos.capacidad() + " de memoria en la RAM del "
-                    + anfitrion.getNombre() + " (libre " + anfitrion.getRam().getLibre() + ")");
+            Debug.error(ORIGEN, "buffer '" + nombre + "': no se pudo reservar la RAM del " + anfitrion.getNombre());
             return null;
         }
         Buffer buffer = new Buffer(nombre, datos.capacidad(), datos.computador());
-        buffers.agregar(buffer);
+        if (!buffers.agregar(buffer)) {
+            anfitrion.getRam().liberar(Buffer.duenoEnRam(nombre));
+            return null;
+        }
+        registrarBuffer(new DatosBuffer(nombre, datos.capacidad(), datos.computador()));
         log.registrar(reloj.getCiclo(), "Buffer " + nombre + " creado en el " + anfitrion.getNombre() + " (capacidad "
                 + datos.capacidad() + ", RAM " + anfitrion.getRam().getUsada() + "/" + anfitrion.getRam().getCapacidad() + ")");
+        Debug.ok(ORIGEN, "buffer '" + nombre + "' creado en el " + anfitrion.getNombre());
         return buffer;
     }
 
@@ -123,12 +146,42 @@ public class Cluster implements ObservadorReloj {
         return creados;
     }
 
+    /** Motivo por el que el proceso no se puede crear ahora, o null si los datos son válidos. */
+    public String validarProceso(DatosProceso datos) {
+        if (datos == null || datos.tipo() == null) {
+            return "datos de proceso nulos o sin tipo";
+        }
+        String errores = FabricaProcesos.validar(datos).trim();
+        if (!errores.isEmpty()) {
+            return errores.endsWith(";") ? errores.substring(0, errores.length() - 1) : errores;
+        }
+        if (datos.computador() >= computadores.length) {
+            return "el computador " + datos.computador() + " no existe (0.." + (computadores.length - 1) + " o -1)";
+        }
+        int mayorRam = 0;
+        for (Computador c : computadores) {
+            mayorRam = Math.max(mayorRam, c.getRam().getCapacidad());
+        }
+        if (datos.computador() == DatosProceso.ASIGNACION_AUTOMATICA && datos.memoria() > mayorRam) {
+            return "pide " + datos.memoria() + " de memoria y la mayor RAM del clúster es " + mayorRam;
+        }
+        if (datos.computador() != DatosProceso.ASIGNACION_AUTOMATICA
+                && datos.memoria() > computadores[datos.computador()].getRam().getCapacidad()) {
+            return "pide " + datos.memoria() + " de memoria y la RAM total del " + computadores[datos.computador()].getNombre()
+                    + " es " + computadores[datos.computador()].getRam().getCapacidad();
+        }
+        if (datos.tipo().usaBuffer() && buffers.buscar(datos.buffer().trim()) == null) {
+            return "el buffer '" + datos.buffer().trim() + "' no existe";
+        }
+        return null;
+    }
+
     /** Crea un proceso y lo entrega al computador indicado, o al de menor carga si es automático. */
     public PCB crearProceso(DatosProceso datos) {
         long ciclo = reloj.getCiclo();
-        if (datos != null && datos.computador() >= computadores.length) {
-            Debug.error(ORIGEN, "'" + datos.nombre() + "': el computador " + datos.computador() + " no existe (0.."
-                    + (computadores.length - 1) + " o -1)");
+        String error = validarProceso(datos);
+        if (error != null) {
+            Debug.error(ORIGEN, "proceso '" + (datos == null ? null : datos.nombre()) + "' rechazado: " + error);
             return null;
         }
         PCB pcb = FabricaProcesos.crear(datos, ciclo);
@@ -152,8 +205,72 @@ public class Cluster implements ObservadorReloj {
         if (!destino.getKernel().agregarProceso(pcb, ciclo)) {
             return null;
         }
+        registrarProceso(datos);
         inactivo = false;
         return pcb;
+    }
+
+    /** Guarda los datos de un buffer creado con éxito, para poder guardarlos en la configuración. */
+    private void registrarBuffer(DatosBuffer datos) {
+        mutexCreados.acquireUninterruptibly();
+        try {
+            buffersCreados.agregarFinal(datos);
+        } finally {
+            mutexCreados.release();
+        }
+    }
+
+    /** Guarda los datos de un proceso creado con éxito, para poder guardarlos en la configuración. */
+    private void registrarProceso(DatosProceso datos) {
+        mutexCreados.acquireUninterruptibly();
+        try {
+            procesosCreados.agregarFinal(datos);
+        } finally {
+            mutexCreados.release();
+        }
+    }
+
+    /** Configuración con el estado actual: parámetros vigentes y todos los buffers y procesos creados con éxito. */
+    public ConfiguracionSistema configuracionActual() {
+        ListaEnlazada<ConfigComputador> configComputadores = new ListaEnlazada<>();
+        for (Computador c : computadores) {
+            configComputadores.agregarFinal(new ConfigComputador(c.getRam().getCapacidad(),
+                    c.getKernel().getPolitica(), c.getKernel().getQuantum()));
+        }
+        ListaEnlazada<DatosBuffer> datosBuffers = new ListaEnlazada<>();
+        ListaEnlazada<DatosProceso> datosProcesos = new ListaEnlazada<>();
+        mutexCreados.acquireUninterruptibly();
+        try {
+            Nodo<DatosBuffer> b = buffersCreados.getCabeza();
+            while (b != null) {
+                datosBuffers.agregarFinal(b.getDato());
+                b = b.getSiguiente();
+            }
+            Nodo<DatosProceso> p = procesosCreados.getCabeza();
+            while (p != null) {
+                datosProcesos.agregarFinal(p.getDato());
+                p = p.getSiguiente();
+            }
+        } finally {
+            mutexCreados.release();
+        }
+        CondicionesParada vigente = new CondicionesParada(maxCiclos, parada.limiteTiempoActivo(),
+                parada.limiteTiempoSegundos(), parada.inactividadActiva(), parada.inactividadSegundos());
+        return new ConfiguracionSistema(Debug.isActivo(), reloj.getDuracionCicloMs(), vigente, config.getLatenciaRed(),
+                config.getEnvejecimientoCadaCiclos(), configComputadores, datosBuffers, datosProcesos, 0);
+    }
+
+    /** Guarda en el archivo la configuración actual (la carga inicial más lo creado en ejecución). */
+    public boolean guardarConfiguracion(String ruta) {
+        if (ruta == null || ruta.isBlank()) {
+            Debug.error(ORIGEN, "guardar: la ruta del archivo está vacía");
+            return false;
+        }
+        boolean guardado = ArchivoConfiguracion.guardarConfiguracion(configuracionActual(), ruta.trim());
+        if (guardado) {
+            log.registrar(reloj.getCiclo(), "Configuración guardada en " + ruta.trim());
+        }
+        return guardado;
     }
 
     /** Busca el computador menos cargado para el proceso nuevo. */
