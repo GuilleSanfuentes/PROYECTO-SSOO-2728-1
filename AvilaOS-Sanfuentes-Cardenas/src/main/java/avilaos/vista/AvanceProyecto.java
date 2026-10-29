@@ -10,7 +10,7 @@ public final class AvanceProyecto {
         "Kernel y planificador", "Admisión (largo plazo)",
         "Semáforos ÁvilaOS", "Buffers productor-consumidor",
         "Clúster y red (acceso remoto)",
-        "Métricas",
+        "Métricas y gráfico de CPU",
         "Carga y guardado de simulaciones",
         "GUI"
     };

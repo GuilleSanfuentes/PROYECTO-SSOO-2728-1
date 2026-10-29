@@ -17,6 +17,8 @@ public class ConsolaTerminal implements ObservadorReloj {
              Comandos (escribir y pulsar Enter):
                pausa | seguir | stop          pausar, reanudar o detener la simulación
                estado                         tabla completa de procesos
+               metricas                       throughput, CPU, respuesta, deadlines, equidad y buffers
+               grafico [ruta]                 guarda la utilización de CPU como PNG (salida/utilizacion_cpu.png)
                politica <comp> <POLITICA>     ej. politica 0 EDF  (FCFS, EDF, ROUND_ROBIN, PRIORIDADES)
                quantum <comp> <n>             ej. quantum 1 4
                velocidad <ms>                 duración del ciclo, ej. velocidad 200
@@ -61,6 +63,12 @@ public class ConsolaTerminal implements ObservadorReloj {
                 case "stop" -> cluster.detener();
                 case "estado" -> Debug.bloque(ReporteTerminal.separador() + "\n"
                         + ReporteTerminal.tablaProcesos(cluster.todosLosProcesos()) + ReporteTerminal.separador());
+                case "metricas" -> Debug.bloque(ReporteTerminal.separador() + "\n"
+                        + ReporteTerminal.tablaMetricas(cluster) + ReporteTerminal.separador());
+                case "grafico" -> {
+                    return GraficoUtilizacion.exportarPNG(cluster.getUtilizacion(),
+                            partes.length > 1 ? partes[1] : GraficoUtilizacion.RUTA_POR_DEFECTO);
+                }
                 case "ayuda" -> Debug.bloque(AYUDA);
                 case "politica" -> {
                     exigir(partes, 3);

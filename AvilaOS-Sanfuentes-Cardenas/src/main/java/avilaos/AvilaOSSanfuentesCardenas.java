@@ -10,6 +10,7 @@ import avilaos.config.ConfiguracionSistema;
 import avilaos.log.Debug;
 import avilaos.log.LogEventos;
 import avilaos.vista.ConsolaTerminal;
+import avilaos.vista.GraficoUtilizacion;
 import avilaos.vista.ReporteTerminal;
 
 /**
@@ -31,6 +32,7 @@ public class AvilaOSSanfuentesCardenas {
         cluster.iniciar();
         cluster.esperarFin(0);
         ReporteTerminal.resumenFinal(cluster);
+        GraficoUtilizacion.exportarPNG(cluster.getUtilizacion(), GraficoUtilizacion.RUTA_POR_DEFECTO);
         cluster.apagar();
     }
 }

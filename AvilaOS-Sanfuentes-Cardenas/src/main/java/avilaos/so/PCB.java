@@ -205,6 +205,11 @@ public class PCB {
         return cicloPrimeraEjecucion < 0 ? -1 : cicloPrimeraEjecucion - cicloLlegada;
     }
 
+    /** Ciclos entre la llegada y el fin, o -1 si aún no terminó. */
+    public long getTiempoRetorno() {
+        return cicloFin < 0 ? -1 : cicloFin - cicloLlegada;
+    }
+
     /** Instrucciones que faltan por ejecutar. */
     public int getTiempoRestante() {
         return programa.totalInstrucciones() - contador;
@@ -306,6 +311,11 @@ public class PCB {
 
     public long getCiclosBloqueadoSemaforo() {
         return ciclosBloqueadoSemaforo;
+    }
+
+    /** Ciclos bloqueado en semáforos hasta el ciclo indicado, contando el bloqueo que sigue abierto. */
+    public long getCiclosBloqueadoSemaforoHasta(long ciclo) {
+        return ciclosBloqueadoSemaforo + (cicloInicioBloqueoSemaforo >= 0 ? ciclo - cicloInicioBloqueoSemaforo : 0);
     }
 
     public boolean isDeadlineVencido() {

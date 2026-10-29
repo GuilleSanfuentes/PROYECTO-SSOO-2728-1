@@ -11,6 +11,7 @@ import avilaos.hardware.ObservadorReloj;
 import avilaos.hardware.Reloj;
 import avilaos.log.Debug;
 import avilaos.log.LogEventos;
+import avilaos.metricas.RegistroUtilizacion;
 import avilaos.so.DatosProceso;
 import avilaos.so.FabricaProcesos;
 import avilaos.so.PCB;
@@ -30,6 +31,7 @@ public class Cluster implements ObservadorReloj {
     private final ListaEnlazada<ObservadorReloj> observadores = new ListaEnlazada<>();
     private final RegistroBuffers buffers = new RegistroBuffers();
     private final CondicionesParada parada;
+    private final RegistroUtilizacion utilizacion;
     private volatile int maxCiclos;
     private volatile boolean inactivo;
 
@@ -62,6 +64,13 @@ public class Cluster implements ObservadorReloj {
             crearBuffer(nodoBuffer.getDato());
             nodoBuffer = nodoBuffer.getSiguiente();
         }
+        String[] nombres = new String[computadores.length];
+        long[] ocupados = new long[computadores.length];
+        for (int i = 0; i < computadores.length; i++) {
+            nombres[i] = computadores[i].getNombre();
+            ocupados[i] = computadores[i].getCpu().getCiclosUsuario() + computadores[i].getCpu().getCiclosSO();
+        }
+        this.utilizacion = new RegistroUtilizacion(nombres, ocupados);
         reloj.agregarObservador(this);
         Debug.ok(ORIGEN, "clúster listo con " + computadores.length + " computadores y " + buffers.cantidad()
                 + " buffers; fases: " + reloj.describirFases());
@@ -211,6 +220,9 @@ public class Cluster implements ObservadorReloj {
     public void alCerrarCiclo(long ciclo) {
         for (Computador c : computadores) {
             c.getKernel().cerrarCiclo(ciclo);
+        }
+        for (int i = 0; i < computadores.length; i++) {
+            utilizacion.registrar(ciclo, i, computadores[i].getCpu().getCiclosUsuario() + computadores[i].getCpu().getCiclosSO());
         }
         inactivo = calcularInactividad();
         Nodo<ObservadorReloj> nodo = observadores.getCabeza();
@@ -369,6 +381,11 @@ public class Cluster implements ObservadorReloj {
     /** Registro con los buffers creados en el clúster. */
     public RegistroBuffers getBuffers() {
         return buffers;
+    }
+
+    /** Utilización de la CPU de cada computador en el tiempo (datos del gráfico). */
+    public RegistroUtilizacion getUtilizacion() {
+        return utilizacion;
     }
 
     public LogEventos getLog() {
