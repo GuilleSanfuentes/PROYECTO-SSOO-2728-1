@@ -6,6 +6,7 @@ import java.awt.FlowLayout;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.SwingUtilities;
 
 /** Barra superior: ciclo del reloj, estado de la simulación y botones Iniciar, Pausar/Seguir y Stop. */
 public class PanelControl extends JPanel {
@@ -19,6 +20,8 @@ public class PanelControl extends JPanel {
     private final CampoEditable campoDuracion = new CampoEditable(5);
     private final CampoEditable campoMaxCiclos = new CampoEditable(5);
     private final JLabel errorCampos = new JLabel();
+    private DialogoProceso dialogoProceso;
+    private DialogoBuffer dialogoBuffer;
 
     /** Arma la barra sobre el clúster indicado. */
     public PanelControl(Cluster cluster) {
@@ -37,6 +40,8 @@ public class PanelControl extends JPanel {
         add(new JLabel("Parar en el ciclo:"));
         add(campoMaxCiclos);
         add(boton("Aplicar", this::aplicarMaxCiclos));
+        add(boton("Crear proceso", () -> abrir(dialogoProceso())));
+        add(boton("Crear buffer", () -> abrir(dialogoBuffer())));
         errorCampos.setForeground(ColoresEstado.ROJO);
         add(errorCampos);
         campoDuracion.addActionListener(e -> aplicarDuracion());
@@ -65,6 +70,25 @@ public class PanelControl extends JPanel {
         botonPausa.setEnabled(marcha);
         botonPausa.setText(pausado ? "Seguir" : "Pausar");
         botonStop.setEnabled(marcha);
+    }
+
+    private DialogoProceso dialogoProceso() {
+        if (dialogoProceso == null) {
+            dialogoProceso = new DialogoProceso(SwingUtilities.getWindowAncestor(this), cluster);
+        }
+        return dialogoProceso;
+    }
+
+    private DialogoBuffer dialogoBuffer() {
+        if (dialogoBuffer == null) {
+            dialogoBuffer = new DialogoBuffer(SwingUtilities.getWindowAncestor(this), cluster);
+        }
+        return dialogoBuffer;
+    }
+
+    private static void abrir(java.awt.Window dialogo) {
+        dialogo.setVisible(true);
+        dialogo.toFront();
     }
 
     private static JButton boton(String texto, Runnable accion) {
