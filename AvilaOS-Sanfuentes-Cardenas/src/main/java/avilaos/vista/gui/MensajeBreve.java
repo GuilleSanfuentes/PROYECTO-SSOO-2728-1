@@ -8,7 +8,7 @@ import javax.swing.Timer;
 public class MensajeBreve extends JLabel {
 
     private static final Color VERDE = new Color(25, 135, 84);
-    private static final int DURACION_MS = 2000;
+    private static final int DURACION_MS = 3500;
 
     private final Timer reloj = new Timer(DURACION_MS, e -> limpiar());
 

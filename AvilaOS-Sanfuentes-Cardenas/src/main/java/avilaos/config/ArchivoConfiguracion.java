@@ -116,7 +116,7 @@ public final class ArchivoConfiguracion {
         }
         if (config.getErroresCarga() > 0) {
             int otros = config.getErroresCarga() - 1;
-            throw new IllegalArgumentException(lector.primerError + (otros > 0 ? " (y " + otros + " errores más)" : ""));
+            throw new IllegalArgumentException(lector.primerError + (otros > 0 ? " (y " + otros + (otros == 1 ? " error más)" : " errores más)") : ""));
         }
         Debug.ok(ORIGEN, ruta + " cargado sin errores");
         return config;
