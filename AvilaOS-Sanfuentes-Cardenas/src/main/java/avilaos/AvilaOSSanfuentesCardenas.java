@@ -1,3 +1,7 @@
+/*
+ * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
+ */
+
 package avilaos;
 
 import avilaos.cluster.Cluster;
@@ -9,7 +13,11 @@ import avilaos.vista.ConsolaTerminal;
 import avilaos.vista.ReporteTerminal;
 import avilaos.vista.gui.VentanaPrincipal;
 
-/** Punto de entrada de la simulación: arma el clúster desde el JSON y abre la ventana en pausa, esperando Iniciar. */
+/**
+ * Punto de entrada de la simulación: arma el clúster desde el JSON y abre la ventana en pausa, esperando Iniciar.
+ *
+ * @author guill
+ */
 public class AvilaOSSanfuentesCardenas {
 
     public static void main(String[] args) {
