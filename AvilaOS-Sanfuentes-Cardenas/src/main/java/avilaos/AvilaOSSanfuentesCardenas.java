@@ -29,7 +29,8 @@ public class AvilaOSSanfuentesCardenas {
 
         Cluster cluster = new Cluster(config, log);
         cluster.cargarProcesosIniciales();
-        new ConsolaTerminal(cluster).iniciar();
-        new VentanaPrincipal(cluster).mostrar();
+        ConsolaTerminal consola = new ConsolaTerminal(cluster);
+        consola.iniciar();
+        new VentanaPrincipal(cluster, consola).mostrar();
     }
 }

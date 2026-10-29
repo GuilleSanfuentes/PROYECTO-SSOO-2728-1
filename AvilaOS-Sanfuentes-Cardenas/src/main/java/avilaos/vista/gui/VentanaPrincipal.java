@@ -1,11 +1,17 @@
 package avilaos.vista.gui;
 
 import avilaos.cluster.Cluster;
+import avilaos.config.ArchivoConfiguracion;
+import avilaos.config.ConfiguracionSistema;
 import avilaos.hardware.ObservadorReloj;
+import avilaos.log.Debug;
+import avilaos.log.LogEventos;
+import avilaos.vista.ConsolaTerminal;
 import avilaos.vista.GraficoUtilizacion;
 import avilaos.vista.ReporteTerminal;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
+import java.io.File;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import javax.swing.JFrame;
@@ -24,12 +30,16 @@ public class VentanaPrincipal extends JFrame implements ObservadorReloj {
     private final PanelComputador[] paneles;
     private final PanelInferior inferior = new PanelInferior();
     private final PuenteEDT<FotoCluster> puente;
+    private final ConsolaTerminal consola;
+    private final Timer vigilante;
     private boolean resumenEmitido;
+    private boolean cargando;
 
-    /** Arma la ventana sobre el clúster indicado, sin iniciar la simulación. */
-    public VentanaPrincipal(Cluster cluster) {
+    /** Arma la ventana sobre el clúster indicado, sin iniciar la simulación; la consola (opcional) sigue al clúster nuevo al cargar. */
+    public VentanaPrincipal(Cluster cluster, ConsolaTerminal consola) {
         super("ÁvilaOS");
         this.cluster = cluster;
+        this.consola = consola;
         this.control = new PanelControl(cluster);
         this.puente = new PuenteEDT<>(this::refrescar);
         setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
@@ -65,7 +75,50 @@ public class VentanaPrincipal extends JFrame implements ObservadorReloj {
             }
         });
         cluster.agregarObservador(this);
-        new Timer(REFRESCO_ESTADO_MS, e -> vigilarEstado()).start();
+        vigilante = new Timer(REFRESCO_ESTADO_MS, e -> vigilarEstado());
+        vigilante.start();
+    }
+
+    /** Valida el archivo; si es correcto detiene este clúster y abre una ventana nueva con el clúster cargado, en pausa. */
+    public void cargarConfiguracion(File archivo) {
+        if (cargando) {
+            return;
+        }
+        ConfiguracionSistema nueva;
+        try {
+            nueva = ArchivoConfiguracion.cargarEstricto(archivo.getPath());
+        } catch (IllegalArgumentException e) {
+            SelectorConfiguracion.error(this, "Cargar configuración",
+                    "No se cargó \"" + archivo.getName() + "\": " + e.getMessage() + "\n\nSigue la simulación actual.");
+            return;
+        }
+        cargando = true;
+        Thread hilo = new Thread(() -> {
+            cluster.detener();
+            cluster.apagar();
+            SwingUtilities.invokeLater(() -> reemplazar(archivo, nueva));
+        }, "Hilo-Cargar-GUI");
+        hilo.setDaemon(true);
+        hilo.start();
+    }
+
+    private void reemplazar(File archivo, ConfiguracionSistema config) {
+        emitirResumenFinal();
+        Debug.setActivo(config.isDebugger());
+        LogEventos log = new LogEventos(LogEventos.CAPACIDAD_POR_DEFECTO);
+        Debug.setLog(log);
+        ReporteTerminal.resumenConfiguracion(archivo.getPath(), config);
+        Cluster nuevo = new Cluster(config, log);
+        nuevo.cargarProcesosIniciales();
+        if (consola != null) {
+            consola.reemplazarCluster(nuevo);
+        }
+        VentanaPrincipal ventana = new VentanaPrincipal(nuevo, consola);
+        ventana.setBounds(getBounds());
+        ventana.setExtendedState(getExtendedState());
+        ventana.mostrar();
+        vigilante.stop();
+        dispose();
     }
 
     /** Muestra la ventana en el hilo de Swing, con el estado inicial ya dibujado. */

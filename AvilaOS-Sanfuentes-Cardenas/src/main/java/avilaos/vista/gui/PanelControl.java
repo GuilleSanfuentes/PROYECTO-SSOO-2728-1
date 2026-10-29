@@ -41,6 +41,8 @@ public class PanelControl extends JPanel {
         fila1.add(etiquetaEstado);
         fila1.add(boton("Crear proceso", () -> abrir(dialogoProceso())));
         fila1.add(boton("Crear buffer", () -> abrir(dialogoBuffer())));
+        fila1.add(boton("Guardar configuración", this::guardarConfiguracion));
+        fila1.add(boton("Cargar configuración", this::cargarConfiguracion));
         fila2.add(new JLabel("Ciclo (ms):"));
         fila2.add(campoDuracion);
         fila2.add(boton("Aplicar", this::aplicarDuracion));
@@ -137,6 +139,39 @@ public class PanelControl extends JPanel {
         }
         campoMaxCiclos.confirmar();
         errorCampos.exito(r.valor() == 0 ? "Parada aplicada: sin límite" : "Parada aplicada: ciclo " + r.valor());
+    }
+
+    /** Pide la ruta y guarda la configuración actual del clúster. */
+    private void guardarConfiguracion() {
+        java.io.File archivo;
+        cluster.formularioAbierto(true);
+        try {
+            archivo = SelectorConfiguracion.elegirParaGuardar(this);
+            if (archivo == null) {
+                return;
+            }
+            if (cluster.guardarConfiguracion(archivo.getPath())) {
+                errorCampos.exito("Configuración guardada: " + archivo.getName());
+            } else {
+                SelectorConfiguracion.error(this, "Guardar configuración", "No se pudo guardar en " + archivo.getPath());
+            }
+        } finally {
+            cluster.formularioAbierto(false);
+        }
+    }
+
+    /** Pide el archivo y se lo pasa a la ventana para reemplazar el clúster. */
+    private void cargarConfiguracion() {
+        java.io.File archivo;
+        cluster.formularioAbierto(true);
+        try {
+            archivo = SelectorConfiguracion.elegirParaCargar(this);
+        } finally {
+            cluster.formularioAbierto(false);
+        }
+        if (archivo != null && SwingUtilities.getWindowAncestor(this) instanceof VentanaPrincipal ventana) {
+            ventana.cargarConfiguracion(archivo);
+        }
     }
 
     private void alternarPausa() {

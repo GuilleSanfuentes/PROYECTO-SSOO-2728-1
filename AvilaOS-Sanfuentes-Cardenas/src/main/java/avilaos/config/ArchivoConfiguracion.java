@@ -101,6 +101,27 @@ public final class ArchivoConfiguracion {
         return config;
     }
 
+    /** Carga un archivo existente exigiendo que todo sea válido; si no, lanza IllegalArgumentException con el motivo. */
+    public static ConfiguracionSistema cargarEstricto(String ruta) {
+        if (!Files.isRegularFile(Paths.get(ruta))) {
+            throw new IllegalArgumentException("el archivo no existe: " + ruta);
+        }
+        Lector lector = new Lector(ruta);
+        ConfiguracionSistema config;
+        try {
+            config = lector.interpretar(leerSinMensajes(ruta));
+        } catch (IOException | RuntimeException e) {
+            Debug.error(ORIGEN, "no se pudo leer " + ruta + ": " + e.getMessage());
+            throw new IllegalArgumentException("no es un JSON de configuración válido (" + e.getMessage() + ")");
+        }
+        if (config.getErroresCarga() > 0) {
+            int otros = config.getErroresCarga() - 1;
+            throw new IllegalArgumentException(lector.primerError + (otros > 0 ? " (y " + otros + " errores más)" : ""));
+        }
+        Debug.ok(ORIGEN, ruta + " cargado sin errores");
+        return config;
+    }
+
     /** Guarda la configuración en el archivo de forma atómica. */
     public static boolean guardarConfiguracion(ConfiguracionSistema config, String ruta) {
         acceso.acquireUninterruptibly();
@@ -256,6 +277,7 @@ public final class ArchivoConfiguracion {
 
         private final String ruta;
         private int errores;
+        private String primerError;
 
         Lector(String ruta) {
             this.ruta = ruta;
@@ -500,6 +522,9 @@ public final class ArchivoConfiguracion {
 
         private void error(String mensaje) {
             errores++;
+            if (primerError == null) {
+                primerError = mensaje;
+            }
             Debug.error(ORIGEN, ruta + ": " + mensaje);
         }
     }
