@@ -1,9 +1,12 @@
 package avilaos.vista;
 
 import avilaos.cluster.Cluster;
+import avilaos.config.ArchivoConfiguracion;
 import avilaos.enums.PoliticaTipo;
 import avilaos.hardware.ObservadorReloj;
 import avilaos.log.Debug;
+import avilaos.so.DatosProceso;
+import avilaos.sync.DatosBuffer;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -23,7 +26,14 @@ public class ConsolaTerminal implements ObservadorReloj {
                quantum <comp> <n>             ej. quantum 1 4
                velocidad <ms>                 duración del ciclo, ej. velocidad 200
                maxciclos <n>                  detener al llegar a n ciclos (0 = sin límite)
-               ayuda                          muestra esta lista""";
+               buffer <nombre> <capacidad> <comp>
+                                              crea un buffer, ej. buffer B2 4 1
+               proceso <tipo> <nombre> <prio> <mem> <deadline> <comp|-1> <datos del tipo>
+                                              cpu: <instrucciones> | io: <instrucciones> <cadaES> <duracionES>
+                                              productor|consumidor: <buffer> <ciclosPorElemento> <elementos>
+                                              ej. proceso cpu Calc 3 50 200 -1 20
+               guardar [ruta]                 guarda la configuración actual (config/avilaosconfigs.json)
+               ayuda                         muestra esta lista""";
 
     private final Cluster cluster;
 
@@ -87,6 +97,17 @@ public class ConsolaTerminal implements ObservadorReloj {
                     exigir(partes, 2);
                     return cluster.cambiarMaxCiclos(Integer.parseInt(partes[1]));
                 }
+                case "buffer" -> {
+                    exigir(partes, 4);
+                    return cluster.crearBuffer(new DatosBuffer(partes[1], Integer.parseInt(partes[2]),
+                            Integer.parseInt(partes[3]))) != null;
+                }
+                case "proceso" -> {
+                    return crearProceso(partes);
+                }
+                case "guardar" -> {
+                    return cluster.guardarConfiguracion(partes.length > 1 ? partes[1] : ArchivoConfiguracion.RUTA_POR_DEFECTO);
+                }
                 default -> {
                     Debug.error(ORIGEN, "comando desconocido '" + partes[0] + "'; escribe 'ayuda'");
                     return false;
@@ -99,6 +120,41 @@ public class ConsolaTerminal implements ObservadorReloj {
             Debug.error(ORIGEN, "'" + linea + "': " + e.getMessage());
         }
         return false;
+    }
+
+    /** Arma los datos del proceso según su tipo y se los pasa al clúster. */
+    private boolean crearProceso(String[] partes) {
+        exigir(partes, 8);
+        String nombre = partes[2];
+        int prioridad = Integer.parseInt(partes[3]);
+        int memoria = Integer.parseInt(partes[4]);
+        int deadline = Integer.parseInt(partes[5]);
+        int computador = Integer.parseInt(partes[6]);
+        DatosProceso datos;
+        switch (partes[1].toLowerCase()) {
+            case "cpu" -> datos = DatosProceso.cpuBound(nombre, prioridad, memoria, deadline,
+                    Integer.parseInt(partes[7]), computador);
+            case "io" -> {
+                exigir(partes, 10);
+                datos = DatosProceso.ioBound(nombre, prioridad, memoria, deadline, Integer.parseInt(partes[7]),
+                        Integer.parseInt(partes[8]), Integer.parseInt(partes[9]), computador);
+            }
+            case "productor" -> {
+                exigir(partes, 10);
+                datos = DatosProceso.productor(nombre, prioridad, memoria, deadline, partes[7],
+                        Integer.parseInt(partes[8]), Integer.parseInt(partes[9]), computador);
+            }
+            case "consumidor" -> {
+                exigir(partes, 10);
+                datos = DatosProceso.consumidor(nombre, prioridad, memoria, deadline, partes[7],
+                        Integer.parseInt(partes[8]), Integer.parseInt(partes[9]), computador);
+            }
+            default -> {
+                Debug.error(ORIGEN, "tipo '" + partes[1] + "' no existe (cpu, io, productor, consumidor)");
+                return false;
+            }
+        }
+        return cluster.crearProceso(datos) != null;
     }
 
     /** Lee líneas de la entrada estándar hasta que se cierre. */
