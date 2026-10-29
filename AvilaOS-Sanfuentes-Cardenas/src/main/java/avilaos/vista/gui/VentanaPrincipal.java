@@ -22,6 +22,7 @@ public class VentanaPrincipal extends JFrame implements ObservadorReloj {
     private final Cluster cluster;
     private final PanelControl control;
     private final PanelComputador[] paneles;
+    private final PanelInferior inferior = new PanelInferior();
     private final PuenteEDT<FotoCluster> puente;
     private boolean resumenEmitido;
 
@@ -47,7 +48,7 @@ public class VentanaPrincipal extends JFrame implements ObservadorReloj {
         scroll.getVerticalScrollBar().setUnitIncrement(24);
         scroll.setMinimumSize(new Dimension(0, 150));
 
-        JSplitPane division = new JSplitPane(JSplitPane.VERTICAL_SPLIT, scroll, new PanelInferior());
+        JSplitPane division = new JSplitPane(JSplitPane.VERTICAL_SPLIT, scroll, inferior);
         division.setResizeWeight(0.75);
         division.setOneTouchExpandable(true);
         division.setContinuousLayout(true);
@@ -86,6 +87,7 @@ public class VentanaPrincipal extends JFrame implements ObservadorReloj {
         for (int i = 0; i < paneles.length; i++) {
             paneles[i].mostrar(foto.computadores()[i]);
         }
+        inferior.mostrar(foto);
     }
 
     /** Si el reloj se detuvo tras correr, dibuja el último estado y emite el resumen final una sola vez. */

@@ -81,6 +81,26 @@ public class LogEventos {
         }
     }
 
+    /** Devuelve una copia de los últimos n eventos, del más antiguo al más reciente. */
+    public String[] copiarUltimos(int n) {
+        mutex.acquireUninterruptibly();
+        try {
+            int total = Math.min(Math.max(0, n), eventos.tamano());
+            String[] copia = new String[total];
+            Nodo<String> actual = eventos.getCabeza();
+            for (int i = eventos.tamano() - total; i > 0; i--) {
+                actual = actual.getSiguiente();
+            }
+            for (int i = 0; i < total; i++) {
+                copia[i] = actual.getDato();
+                actual = actual.getSiguiente();
+            }
+            return copia;
+        } finally {
+            mutex.release();
+        }
+    }
+
     /** Devuelve la cantidad de eventos guardados. */
     public int tamano() {
         mutex.acquireUninterruptibly();

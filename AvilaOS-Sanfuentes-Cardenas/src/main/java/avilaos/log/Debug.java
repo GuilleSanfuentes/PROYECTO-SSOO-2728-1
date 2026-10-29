@@ -11,6 +11,7 @@ public final class Debug {
     private static volatile boolean activo = false;
     private static volatile long ciclo = 0;
     private static volatile LogEventos log = null;
+    private static final ConsolaDebug consola = new ConsolaDebug(1000);
 
     private Debug() {
     }
@@ -33,6 +34,11 @@ public final class Debug {
     /** Asocia el log de eventos que se muestra junto a cada error. */
     public static void setLog(LogEventos valor) {
         log = valor;
+    }
+
+    /** Copia de la salida del Debug que lee la interfaz. */
+    public static ConsolaDebug getConsola() {
+        return consola;
     }
 
     /** Mensaje de operación correcta. */
@@ -83,6 +89,7 @@ public final class Debug {
         salida.acquireUninterruptibly();
         try {
             System.out.println(texto);
+            consola.agregar(texto);
         } finally {
             salida.release();
         }
