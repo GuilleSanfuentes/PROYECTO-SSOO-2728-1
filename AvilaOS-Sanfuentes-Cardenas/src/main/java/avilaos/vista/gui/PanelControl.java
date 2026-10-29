@@ -16,6 +16,9 @@ public class PanelControl extends JPanel {
     private final JButton botonIniciar = new JButton("Iniciar");
     private final JButton botonPausa = new JButton("Pausar");
     private final JButton botonStop = new JButton("Stop");
+    private final CampoEditable campoDuracion = new CampoEditable(5);
+    private final CampoEditable campoMaxCiclos = new CampoEditable(5);
+    private final JLabel errorCampos = new JLabel();
 
     /** Arma la barra sobre el clúster indicado. */
     public PanelControl(Cluster cluster) {
@@ -26,6 +29,18 @@ public class PanelControl extends JPanel {
         add(botonStop);
         add(etiquetaCiclo);
         add(etiquetaEstado);
+        campoDuracion.setToolTipText("Duración de cada ciclo en milisegundos (0.." + Reloj.DURACION_MAXIMA_MS + ")");
+        campoMaxCiclos.setToolTipText("Ciclo en el que se detiene la simulación (0 = sin límite)");
+        add(new JLabel("Ciclo (ms):"));
+        add(campoDuracion);
+        add(boton("Aplicar", this::aplicarDuracion));
+        add(new JLabel("Parar en el ciclo:"));
+        add(campoMaxCiclos);
+        add(boton("Aplicar", this::aplicarMaxCiclos));
+        errorCampos.setForeground(ColoresEstado.ROJO);
+        add(errorCampos);
+        campoDuracion.addActionListener(e -> aplicarDuracion());
+        campoMaxCiclos.addActionListener(e -> aplicarMaxCiclos());
         botonIniciar.addActionListener(e -> cluster.iniciar());
         botonPausa.addActionListener(e -> alternarPausa());
         botonStop.addActionListener(e -> detener());
@@ -40,6 +55,8 @@ public class PanelControl extends JPanel {
     /** Ajusta etiqueta de estado y botones según el reloj. */
     public void actualizarEstado() {
         Reloj reloj = cluster.getReloj();
+        campoDuracion.mostrarValor(String.valueOf(reloj.getDuracionCicloMs()));
+        campoMaxCiclos.mostrarValor(String.valueOf(cluster.getMaxCiclos()));
         boolean marcha = reloj.isEjecutando();
         boolean pausado = marcha && reloj.isPausado();
         boolean nuevo = !marcha && reloj.getCiclo() == 0;
@@ -48,6 +65,45 @@ public class PanelControl extends JPanel {
         botonPausa.setEnabled(marcha);
         botonPausa.setText(pausado ? "Seguir" : "Pausar");
         botonStop.setEnabled(marcha);
+    }
+
+    private static JButton boton(String texto, Runnable accion) {
+        JButton boton = new JButton(texto);
+        boton.addActionListener(e -> accion.run());
+        return boton;
+    }
+
+    /** Valida la duración escrita y, si es correcta, la aplica al reloj. */
+    private void aplicarDuracion() {
+        Validador.ResultadoEntero r = Validador.entero(campoDuracion.getText(), "Duración del ciclo", 0, Reloj.DURACION_MAXIMA_MS);
+        if (!r.valido()) {
+            errorCampos.setText(r.motivo());
+            return;
+        }
+        boolean cambiado = cluster.cambiarDuracionCiclo(r.valor());
+        if (cambiado) {
+            campoDuracion.confirmar();
+        }
+        errorCampos.setText(cambiado ? "" : "No se pudo cambiar la duración del ciclo");
+    }
+
+    /** Valida el ciclo de parada escrito y, si es correcto, lo aplica al clúster. */
+    private void aplicarMaxCiclos() {
+        Validador.ResultadoEntero r = Validador.entero(campoMaxCiclos.getText(), "Parar en el ciclo", 0, Integer.MAX_VALUE);
+        if (!r.valido()) {
+            errorCampos.setText(r.motivo());
+            return;
+        }
+        long actual = cluster.getReloj().getCiclo();
+        if (r.valor() > 0 && r.valor() <= actual) {
+            errorCampos.setText("Parar en el ciclo: " + r.valor() + " ya pasó (ciclo actual " + actual + "), usa un valor mayor o 0");
+            return;
+        }
+        boolean cambiado = cluster.cambiarMaxCiclos(r.valor());
+        if (cambiado) {
+            campoMaxCiclos.confirmar();
+        }
+        errorCampos.setText(cambiado ? "" : "No se pudo cambiar el ciclo de parada");
     }
 
     private void alternarPausa() {

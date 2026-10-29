@@ -7,7 +7,7 @@ import javax.swing.JPanel;
 import javax.swing.JViewport;
 import javax.swing.Scrollable;
 
-/** Fila de columnas lado a lado; se estira si la ventana es ancha y hace scroll horizontal si no caben. */
+/** Fila de columnas lado a lado; se estira si la ventana es amplia y hace scroll horizontal o vertical si no caben. */
 public class PanelColumnas extends JPanel implements Scrollable {
 
     /** Crea la fila con n columnas del mismo ancho. */
@@ -37,6 +37,6 @@ public class PanelColumnas extends JPanel implements Scrollable {
 
     @Override
     public boolean getScrollableTracksViewportHeight() {
-        return true;
+        return getParent() instanceof JViewport vista && vista.getHeight() >= getPreferredSize().height;
     }
 }

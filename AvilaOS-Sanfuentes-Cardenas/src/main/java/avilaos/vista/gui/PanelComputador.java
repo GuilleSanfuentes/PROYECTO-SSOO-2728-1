@@ -1,10 +1,15 @@
 package avilaos.vista.gui;
 
+import avilaos.cluster.Cluster;
 import avilaos.enums.EstadoProceso;
 import avilaos.enums.ModoCPU;
+import avilaos.enums.PoliticaTipo;
+import avilaos.so.Planificador;
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
@@ -12,8 +17,12 @@ import java.awt.GridLayout;
 import java.awt.Insets;
 import javax.swing.BorderFactory;
 import javax.swing.BoxLayout;
+import javax.swing.DefaultListCellRenderer;
+import javax.swing.JButton;
+import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
+import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.SwingConstants;
@@ -32,7 +41,14 @@ public class PanelComputador extends JPanel {
     private final JLabel modo = new JLabel("", SwingConstants.CENTER);
     private final JLabel accion = new JLabel("-");
     private final BarraColor barraRam = new BarraColor();
-    private final JLabel politica = new JLabel();
+    private final JComboBox<PoliticaTipo> selectorPolitica = new JComboBox<>(PoliticaTipo.values());
+    private final JLabel etiquetaQuantum = new JLabel("Quantum:");
+    private final CampoEditable campoQuantum = new CampoEditable(4);
+    private final JButton botonQuantum = new JButton("Aplicar");
+    private final JLabel errorPolitica = new JLabel(" ");
+    private final Cluster cluster;
+    private final int numero;
+    private boolean actualizando;
     private final TablaProcesos tablaNuevos = new TablaProcesos(false);
     private final TablaProcesos tablaListos = new TablaProcesos(false);
     private final TablaProcesos tablaBloqueados = new TablaProcesos(true);
@@ -42,12 +58,26 @@ public class PanelComputador extends JPanel {
     private final JLabel cuentaBloqueados = new JLabel();
     private final JLabel cuentaTerminados = new JLabel();
 
-    /** Arma la columna vacía; los datos llegan con mostrar. */
-    public PanelComputador() {
+    /** Arma la columna vacía del computador indicado; los datos llegan con mostrar. */
+    public PanelComputador(Cluster cluster, int numero) {
         super(new BorderLayout(0, 6));
+        this.cluster = cluster;
+        this.numero = numero;
+        selectorPolitica.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> lista, Object valor, int indice, boolean seleccionado,
+                    boolean enfoque) {
+                return super.getListCellRendererComponent(lista, valor instanceof PoliticaTipo p ? p.getNombre() : valor,
+                        indice, seleccionado, enfoque);
+            }
+        });
+        selectorPolitica.addActionListener(e -> cambiarPolitica());
+        botonQuantum.addActionListener(e -> aplicarQuantum());
+        campoQuantum.addActionListener(e -> aplicarQuantum());
+        errorPolitica.setForeground(ColoresEstado.ROJO);
         setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(new Color(208, 213, 220)), BorderFactory.createEmptyBorder(8, 8, 8, 8)));
-        setPreferredSize(new Dimension(ANCHO, 600));
+        setPreferredSize(new Dimension(ANCHO, 660));
         titulo.setFont(titulo.getFont().deriveFont(Font.BOLD, 16f));
         modo.setOpaque(true);
         modo.setForeground(Color.WHITE);
@@ -107,8 +137,14 @@ public class PanelComputador extends JPanel {
         barraRam.setDatos(uso, ColoresEstado.ram(uso),
                 "RAM  " + f.ramUsada() + " usada / " + f.ramCapacidad() + "  ·  " + (f.ramCapacidad() - f.ramUsada()) + " libre",
                 getBackground());
-        politica.setText("Política: " + f.politica().getNombre()
-                + (f.politica().name().equals("ROUND_ROBIN") ? "  ·  quantum " + f.quantum() : ""));
+        actualizando = true;
+        selectorPolitica.setSelectedItem(f.politica());
+        campoQuantum.mostrarValor(String.valueOf(f.quantum()));
+        actualizando = false;
+        boolean esRoundRobin = f.politica() == PoliticaTipo.ROUND_ROBIN;
+        etiquetaQuantum.setEnabled(esRoundRobin);
+        campoQuantum.setEnabled(esRoundRobin);
+        botonQuantum.setEnabled(esRoundRobin);
         tablaNuevos.mostrar(f.nuevos());
         tablaListos.mostrar(f.listos());
         tablaBloqueados.mostrar(f.bloqueados());
@@ -134,9 +170,41 @@ public class PanelComputador extends JPanel {
 
     private JPanel tarjetaMemoria() {
         JPanel tarjeta = new JPanel(new BorderLayout(0, 4));
+        JPanel fila = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        fila.add(new JLabel("Política:"));
+        fila.add(selectorPolitica);
+        fila.add(etiquetaQuantum);
+        fila.add(campoQuantum);
+        fila.add(botonQuantum);
+        JPanel politica = new JPanel(new BorderLayout(0, 2));
+        politica.add(fila, BorderLayout.NORTH);
+        politica.add(errorPolitica, BorderLayout.SOUTH);
         tarjeta.add(barraRam, BorderLayout.NORTH);
         tarjeta.add(politica, BorderLayout.SOUTH);
         return tarjeta;
+    }
+
+    /** Aplica al clúster la política elegida en el selector. */
+    private void cambiarPolitica() {
+        if (actualizando) {
+            return;
+        }
+        PoliticaTipo elegida = (PoliticaTipo) selectorPolitica.getSelectedItem();
+        errorPolitica.setText(cluster.cambiarPolitica(numero, elegida) ? " " : "No se pudo cambiar la política");
+    }
+
+    /** Valida el quantum escrito y, si es correcto, lo aplica al clúster. */
+    private void aplicarQuantum() {
+        Validador.ResultadoEntero r = Validador.entero(campoQuantum.getText(), "Quantum", 1, Planificador.QUANTUM_MAXIMO);
+        if (!r.valido()) {
+            errorPolitica.setText(r.motivo());
+            return;
+        }
+        boolean cambiado = cluster.cambiarQuantum(numero, r.valor());
+        if (cambiado) {
+            campoQuantum.confirmar();
+        }
+        errorPolitica.setText(cambiado ? " " : "No se pudo cambiar el quantum");
     }
 
     private static void fila(JPanel tarjeta, int fila, String etiqueta, JComponent valor) {

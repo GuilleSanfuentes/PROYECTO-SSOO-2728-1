@@ -10,6 +10,7 @@ import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import javax.swing.JFrame;
 import javax.swing.JScrollPane;
+import javax.swing.JSplitPane;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 
@@ -37,13 +38,21 @@ public class VentanaPrincipal extends JFrame implements ObservadorReloj {
         paneles = new PanelComputador[cluster.cantidadComputadores()];
         PanelColumnas columnas = new PanelColumnas(paneles.length);
         for (int i = 0; i < paneles.length; i++) {
-            paneles[i] = new PanelComputador();
+            paneles[i] = new PanelComputador(cluster, i);
             columnas.add(paneles[i]);
         }
-        JScrollPane scroll = new JScrollPane(columnas, JScrollPane.VERTICAL_SCROLLBAR_NEVER,
+        JScrollPane scroll = new JScrollPane(columnas, JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
                 JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
         scroll.setBorder(null);
-        add(scroll, BorderLayout.CENTER);
+        scroll.getVerticalScrollBar().setUnitIncrement(24);
+        scroll.setMinimumSize(new Dimension(0, 150));
+
+        JSplitPane division = new JSplitPane(JSplitPane.VERTICAL_SPLIT, scroll, new PanelInferior());
+        division.setResizeWeight(0.75);
+        division.setOneTouchExpandable(true);
+        division.setContinuousLayout(true);
+        division.setBorder(null);
+        add(division, BorderLayout.CENTER);
 
         setMinimumSize(new Dimension(900, 700));
         setSize(1280, 800);
