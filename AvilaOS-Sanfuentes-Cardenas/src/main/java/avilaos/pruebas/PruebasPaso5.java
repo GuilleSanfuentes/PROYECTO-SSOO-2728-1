@@ -124,18 +124,19 @@ public final class PruebasPaso5 {
         c.apagar();
     }
 
-    /** Por ahora solo hay acceso local: se rechaza el remoto y el automático va al anfitrión del buffer. */
+    /** Se rechaza un buffer inexistente; el automático ya no va al anfitrión sino al computador menos cargado. */
     private static void probarReglasDeAdmision() {
-        r.grupo("Admisión de productores y consumidores (solo locales en esta etapa)");
+        r.grupo("Admisión de productores y consumidores");
         Cluster c = cluster(PoliticaTipo.FCFS, 3, 1024, buffer("B1", 5, 1));
-        Debug.info(ORIGEN, "las 2 líneas ERROR siguientes son provocadas a propósito");
-        r.verificar("rechaza un productor de otro computador (acceso remoto: etapa 6)",
-                c.crearProceso(DatosProceso.productor("remoto", 3, 10, DEADLINE_LARGO, "B1", 1, 3, 0)) == null, "");
+        Debug.info(ORIGEN, "la línea ERROR siguiente es provocada a propósito");
         r.verificar("rechaza un consumidor de un buffer que no existe",
                 c.crearProceso(DatosProceso.consumidor("fantasma", 3, 10, DEADLINE_LARGO, "NOEXISTE", 1, 3, 0)) == null, "");
+        PCB remoto = r.registrar(c.crearProceso(DatosProceso.productor("remoto", 3, 10, DEADLINE_LARGO, "B1", 1, 3, 0)));
+        r.verificar("acepta un productor de otro computador (acceso remoto, etapa 6)", remoto != null && remoto.getComputador() == 0,
+                String.valueOf(remoto));
         PCB auto = r.registrar(c.crearProceso(DatosProceso.productor("auto", 3, 10, DEADLINE_LARGO, "B1", 1, 3,
                 DatosProceso.ASIGNACION_AUTOMATICA)));
-        r.verificar("en automático va al computador anfitrión del buffer (1) aunque el 0 tenga menos carga",
+        r.verificar("en automático va al computador menos cargado (1, porque el 0 ya tiene un proceso)",
                 auto != null && auto.getComputador() == 1, auto == null ? "null" : String.valueOf(auto.getComputador()));
         c.apagar();
     }
@@ -384,13 +385,13 @@ public final class PruebasPaso5 {
     }
 
     /** Reposo exacto: mutex libre, lleno = elementos y vacío + elementos = capacidad; sin procesos esperando. */
-    private static boolean enReposo(EstadoBuffer e, int capacidad) {
+    static boolean enReposo(EstadoBuffer e, int capacidad) {
         return valores(e, capacidad - e.elementos(), e.elementos(), 1) && e.bloqueadosVacio().estaVacia()
                 && e.bloqueadosLleno().estaVacia() && e.bloqueadosMutex().estaVacia();
     }
 
     /** Un productor completo sobre el buffer: semWait(vacío), semWait(mutex), insertar, semSignal(mutex), semSignal(lleno). */
-    private static void agregar(Buffer buffer, PCB pcb) {
+    static void agregar(Buffer buffer, PCB pcb) {
         buffer.esperar(RolSemaforo.VACIO, pcb);
         buffer.esperar(RolSemaforo.MUTEX, pcb);
         buffer.insertar();
@@ -399,14 +400,14 @@ public final class PruebasPaso5 {
     }
 
     /** Corre los ciclos con el debugger apagado para no llenar la terminal. */
-    private static void correrEnSilencio(Cluster c, int ciclos) {
+    static void correrEnSilencio(Cluster c, int ciclos) {
         boolean activo = Debug.isActivo();
         Debug.setActivo(false);
         c.getReloj().ejecutarCiclos(ciclos);
         Debug.setActivo(activo);
     }
 
-    private static boolean terminoBien(PCB pcb) {
+    static boolean terminoBien(PCB pcb) {
         return pcb.getEstado() == EstadoProceso.TERMINADO && !pcb.isDeadlineVencido();
     }
 
@@ -414,17 +415,17 @@ public final class PruebasPaso5 {
         return e.valorVacio() == vacio && e.valorLleno() == lleno && e.valorMutex() == mutex;
     }
 
-    private static String describir(EstadoBuffer e) {
+    static String describir(EstadoBuffer e) {
         return e.nombre() + " elementos=" + e.elementos() + "/" + e.capacidad() + " vacío=" + e.valorVacio()
                 + " lleno=" + e.valorLleno() + " mutex=" + e.valorMutex() + " producidos=" + e.producidos()
                 + " consumidos=" + e.consumidos();
     }
 
-    private static PCB proceso(String nombre) {
+    static PCB proceso(String nombre) {
         return FabricaProcesos.crear(DatosProceso.cpuBound(nombre, 5, 10, 100, 5, 0), 0);
     }
 
-    private static DatosBuffer buffer(String nombre, int capacidad, int computador) {
+    static DatosBuffer buffer(String nombre, int capacidad, int computador) {
         return new DatosBuffer(nombre, capacidad, computador);
     }
 

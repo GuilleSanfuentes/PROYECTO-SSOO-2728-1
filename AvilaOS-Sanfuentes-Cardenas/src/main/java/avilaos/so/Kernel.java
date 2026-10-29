@@ -17,6 +17,7 @@ import avilaos.hardware.Interrupcion;
 import avilaos.hardware.LineaInterrupciones;
 import avilaos.hardware.RAM;
 import avilaos.hardware.SistemaOperativo;
+import avilaos.hardware.TarjetaRed;
 import avilaos.log.Debug;
 import avilaos.log.LogEventos;
 import avilaos.so.programas.Instruccion;
@@ -52,6 +53,8 @@ public class Kernel implements SistemaOperativo {
     private final ListaEnlazada<Interrupcion> diferidas = new ListaEnlazada<>();
     private volatile RegistroBuffers buffers;
     private volatile LineaInterrupciones[] lineas;
+    private volatile TarjetaRed red;
+    private volatile int latenciaRed;
     private PCB enEjecucion;
     private int ciclosEnCPU;
 
@@ -75,6 +78,12 @@ public class Kernel implements SistemaOperativo {
         this.lineas = lineasClaster;
     }
 
+    /** Conecta la tarjeta de red de este computador y la latencia (en ciclos) de cada acceso remoto a un buffer. */
+    public void conectarRed(TarjetaRed tarjeta, int latencia) {
+        this.red = tarjeta;
+        this.latenciaRed = latencia;
+    }
+
     /** Recibe un proceso nuevo en la cola de Nuevos. Rechaza los que nunca cabrían en la RAM. */
     public boolean agregarProceso(PCB pcb, long ciclo) {
         if (pcb.getMemoria() > ram.getCapacidad()) {
@@ -82,7 +91,7 @@ public class Kernel implements SistemaOperativo {
                     + ram.getCapacidad() + "; nunca podría admitirse, se rechaza");
             return false;
         }
-        if (pcb.getTipo().usaBuffer() && !bufferAceptable(pcb)) {
+        if (pcb.getTipo().usaBuffer() && !bufferExiste(pcb)) {
             return false;
         }
         mutex.acquireUninterruptibly();
@@ -216,6 +225,9 @@ public class Kernel implements SistemaOperativo {
             return;
         }
         bloqueados.eliminar(pcb);
+        if (irq.tipo() == TipoInterrupcion.FIN_RED) {
+            completarAccesoRemoto(pcb, ciclo);
+        }
         if (pcb.programaTerminado()) {
             evento(ciclo, "Proceso " + pcb.getEtiqueta() + " termina su última espera");
             terminarProceso(pcb, ciclo, false);
@@ -290,8 +302,8 @@ public class Kernel implements SistemaOperativo {
             }
             case SEM_WAIT -> sigueEnCPU = semWait(pcb, instruccion.semaforo(), ciclo);
             case SEM_SIGNAL -> semSignal(pcb, instruccion.semaforo(), ciclo);
-            case INSERTAR -> insertar(pcb, ciclo);
-            case EXTRAER -> extraer(pcb, ciclo);
+            case INSERTAR -> sigueEnCPU = insertar(pcb, ciclo);
+            case EXTRAER -> sigueEnCPU = extraer(pcb, ciclo);
             default -> {
             }
         }
@@ -351,7 +363,7 @@ public class Kernel implements SistemaOperativo {
         }
     }
 
-    /** Al morir un proceso por deadline, deduce por su Contador qué permisos de semáforo tenía tomados y los devuelve, para que no queden espacios ocupados ni procesos bloqueados para siempre; si murió esperando en la cola, ese permiso no cuenta. */
+    /** Al morir un proceso por deadline, deduce por su Contador qué permisos de semáforo tenía tomados y los devuelve, para que no queden espacios ocupados ni procesos bloqueados para siempre; si murió esperando (en la cola de un semáforo o en la red), esa última instrucción no cuenta. */
     private void liberarFichas(PCB pcb, boolean esperabaEnCola, long ciclo) {
         Buffer buffer = bufferDe(pcb);
         if (buffer == null) {
@@ -385,9 +397,19 @@ public class Kernel implements SistemaOperativo {
                 despertado.getEtiqueta(), semaforo, ciclo));
     }
 
-    /** Agrega un elemento al buffer del proceso (productor). */
-    private void insertar(PCB pcb, long ciclo) {
+    /** Agrega un elemento al buffer del proceso (productor); si el buffer es remoto lo bloquea por red y devuelve false. */
+    private boolean insertar(PCB pcb, long ciclo) {
         Buffer buffer = bufferDe(pcb);
+        if (buffer != null && esRemoto(buffer)) {
+            iniciarAccesoRemoto(pcb, buffer, ciclo);
+            return false;
+        }
+        completarInsertar(pcb, buffer, ciclo);
+        return true;
+    }
+
+    /** Inserta el elemento en el buffer y lo anota en el proceso. */
+    private void completarInsertar(PCB pcb, Buffer buffer, long ciclo) {
         int elemento = buffer == null ? -1 : buffer.insertar();
         if (elemento < 0) {
             Debug.error(origen, pcb.getEtiqueta() + " no pudo insertar en su buffer");
@@ -397,9 +419,19 @@ public class Kernel implements SistemaOperativo {
         evento(ciclo, "Proceso " + pcb.getEtiqueta() + " inserta el elemento " + elemento + " en " + buffer.getNombre());
     }
 
-    /** Saca un elemento del buffer del proceso (consumidor). */
-    private void extraer(PCB pcb, long ciclo) {
+    /** Saca un elemento del buffer del proceso (consumidor); si el buffer es remoto lo bloquea por red y devuelve false. */
+    private boolean extraer(PCB pcb, long ciclo) {
         Buffer buffer = bufferDe(pcb);
+        if (buffer != null && esRemoto(buffer)) {
+            iniciarAccesoRemoto(pcb, buffer, ciclo);
+            return false;
+        }
+        completarExtraer(pcb, buffer, ciclo);
+        return true;
+    }
+
+    /** Extrae el elemento del buffer y lo anota en el proceso. */
+    private void completarExtraer(PCB pcb, Buffer buffer, long ciclo) {
         int elemento = buffer == null ? -1 : buffer.extraer();
         if (elemento < 0) {
             Debug.error(origen, pcb.getEtiqueta() + " no pudo extraer de su buffer");
@@ -418,19 +450,46 @@ public class Kernel implements SistemaOperativo {
         return registro.buscar(programa.getBuffer());
     }
 
-    /** Comprueba que el buffer del proceso exista y esté en este computador (el acceso remoto llega en la etapa 6). */
-    private boolean bufferAceptable(PCB pcb) {
-        Buffer buffer = bufferDe(pcb);
-        if (buffer == null) {
+    /** Comprueba que el buffer del proceso exista, esté en este computador o en otro. */
+    private boolean bufferExiste(PCB pcb) {
+        if (bufferDe(pcb) == null) {
             Debug.error(origen, pcb.getEtiqueta() + " usa un buffer que no existe; se rechaza");
             return false;
         }
-        if (buffer.getAnfitrion() != idComputador) {
-            Debug.error(origen, pcb.getEtiqueta() + " usa el buffer " + buffer.getNombre() + " del computador "
-                    + buffer.getAnfitrion() + ": el acceso remoto estará disponible en la etapa 6; se rechaza");
-            return false;
-        }
         return true;
+    }
+
+    /** Un acceso es remoto si el buffer vive en otro computador y la latencia de red es mayor que 0. */
+    private boolean esRemoto(Buffer buffer) {
+        return red != null && latenciaRed > 0 && buffer.getAnfitrion() != idComputador;
+    }
+
+    /** Acceso remoto: el proceso pide el buffer de otro computador por la red; libera la CPU y queda Bloqueado por RED mientras la tarjeta de red cuenta la latencia; el buffer no cambia hasta que termina la espera. */
+    private void iniciarAccesoRemoto(PCB pcb, Buffer buffer, long ciclo) {
+        String detalle = "acceso remoto a " + buffer.getNombre() + " (" + latenciaRed + " ciclos)";
+        liberarCPU();
+        pcb.restaurarPrioridad();
+        pcb.bloquear(MotivoBloqueo.RED, detalle, ciclo);
+        bloqueados.agregarFinal(pcb);
+        red.solicitar(pcb.getId(), pcb.getEtiqueta(), latenciaRed, "acceso remoto a " + buffer.getNombre());
+        evento(ciclo, "Proceso " + pcb.getEtiqueta() + " inicia " + detalle);
+    }
+
+    /** Fin del acceso remoto: al llegar la interrupción FIN_RED, el Kernel revisa la última instrucción del proceso y aplica en el buffer el INSERTAR o EXTRAER pendiente; quien lo devuelve a Listos es atenderInterrupcion. */
+    private void completarAccesoRemoto(PCB pcb, long ciclo) {
+        Buffer buffer = bufferDe(pcb);
+        Instruccion pendiente = pcb.getPrograma().instruccionEn(pcb.getContador() - 1);
+        if (buffer == null || pendiente == null) {
+            Debug.error(origen, pcb.getEtiqueta() + " termina un acceso remoto sin buffer o sin instrucción pendiente");
+            return;
+        }
+        if (pendiente.tipo() == TipoInstruccion.INSERTAR) {
+            completarInsertar(pcb, buffer, ciclo);
+        } else if (pendiente.tipo() == TipoInstruccion.EXTRAER) {
+            completarExtraer(pcb, buffer, ciclo);
+        } else {
+            Debug.error(origen, pcb.getEtiqueta() + " termina un acceso remoto pero su instrucción pendiente es " + pendiente);
+        }
     }
 
     /** Guarda el contexto del proceso en CPU y comprueba que los registros coinciden con su PCB. */
@@ -455,6 +514,8 @@ public class Kernel implements SistemaOperativo {
             } else if (pcb.getMotivoBloqueo() == MotivoBloqueo.SEMAFORO) {
                 Buffer buffer = bufferDe(pcb);
                 esperabaEnCola = buffer != null && buffer.quitarBloqueado(pcb);
+            } else if (pcb.getMotivoBloqueo() == MotivoBloqueo.RED) {
+                esperabaEnCola = red != null && red.cancelar(pcb.getId()) > 0;
             }
         }
         evento(ciclo, "Proceso " + pcb.getEtiqueta() + " alcanza su deadline y es terminado (estaba en "

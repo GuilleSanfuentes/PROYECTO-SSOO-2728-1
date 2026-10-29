@@ -320,7 +320,7 @@ public final class PruebasPaso4 {
         c.apagar();
     }
 
-    /** El clúster se arma desde avilaosconfigs.json y crea su carga inicial (los de buffer remoto esperan a la etapa 6). */
+    /** El clúster se arma desde avilaosconfigs.json y crea su carga inicial. */
     private static void probarConfiguracionReal() {
         r.grupo("Clúster armado desde avilaosconfigs.json");
         boolean dl = Debug.isActivo();
@@ -329,12 +329,12 @@ public final class PruebasPaso4 {
         int esperados = 0;
         Nodo<DatosProceso> nodo = config.getProcesos().getCabeza();
         while (nodo != null) {
-            esperados += seCreaConBufferLocal(config, nodo.getDato()) ? 1 : 0;
+            esperados += seCreaConBuffer(config, nodo.getDato()) ? 1 : 0;
             nodo = nodo.getSiguiente();
         }
         int creados = c.cargarProcesosIniciales();
         r.verificar("crea un computador por cada uno configurado", c.cantidadComputadores() == config.getComputadores().tamano(), "");
-        r.verificar("crea los " + esperados + " procesos iniciales posibles (los de buffer remoto esperan a la etapa 6)",
+        r.verificar("crea los " + esperados + " procesos iniciales (también los de buffer remoto)",
                 creados == esperados, creados + " creados");
         Debug.setActivo(false);
         c.getReloj().ejecutarCiclos(10);
@@ -355,15 +355,15 @@ public final class PruebasPaso4 {
         c.apagar();
     }
 
-    /** Sin buffer siempre se crea; con buffer, solo si va al computador anfitrión de ese buffer o es automático. */
-    private static boolean seCreaConBufferLocal(ConfiguracionSistema config, DatosProceso datos) {
+    /** Sin buffer siempre se crea; con buffer, solo si ese buffer existe (local o remoto). */
+    private static boolean seCreaConBuffer(ConfiguracionSistema config, DatosProceso datos) {
         if (!datos.tipo().usaBuffer()) {
             return true;
         }
         Nodo<DatosBuffer> buffer = config.getBuffers().getCabeza();
         while (buffer != null) {
             if (buffer.getDato().nombre().equals(datos.buffer().trim())) {
-                return datos.computador() == AUTO || datos.computador() == buffer.getDato().computador();
+                return true;
             }
             buffer = buffer.getSiguiente();
         }
