@@ -8,14 +8,13 @@ import avilaos.so.DatosProceso;
 import avilaos.so.FabricaProcesos;
 import avilaos.so.PCB;
 import avilaos.sync.Buffer;
-import java.awt.BorderLayout;
-import java.awt.CardLayout;
 import java.awt.Component;
 import java.awt.Window;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.JComboBox;
+import javax.swing.JComponent;
 import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
@@ -25,6 +24,8 @@ public class DialogoProceso extends DialogoFormulario {
 
     private static final int MAX_VALOR = 1_000_000;
     private static final String AUTOMATICO = "Automático";
+    private static final int FILAS_COMUNES = 6;
+    private static final int FILAS_TIPO = 6;
 
     private final JTextField nombre = new JTextField(12);
     private final JComboBox<TipoProceso> tipo = new JComboBox<>(TipoProceso.values());
@@ -33,14 +34,12 @@ public class DialogoProceso extends DialogoFormulario {
     private final JTextField deadline = new JTextField(12);
     private final JComboBox<String> computador = new JComboBox<>();
     private final JTextField instrucciones = new JTextField(12);
-    private final JTextField instruccionesIO = new JTextField(12);
     private final JTextField cadaCiclosES = new JTextField(12);
     private final JTextField duracionES = new JTextField(12);
     private final JComboBox<String> buffer = new JComboBox<>();
     private final JTextField ciclosPorElemento = new JTextField(12);
     private final JTextField elementos = new JTextField(12);
-    private final CardLayout cartas = new CardLayout();
-    private final JPanel especificos = new JPanel(cartas);
+    private final JComponent[][] filasTipo = new JComponent[FILAS_TIPO][];
 
     /** Arma el formulario sobre el clúster indicado. */
     public DialogoProceso(Window dueno, Cluster cluster) {
@@ -57,32 +56,19 @@ public class DialogoProceso extends DialogoFormulario {
                         indice, seleccionado, enfoque);
             }
         });
-        prioridad.setToolTipText(FabricaProcesos.PRIORIDAD_MAXIMA + " (más importante) a " + FabricaProcesos.PRIORIDAD_MINIMA);
-
-        JPanel cpu = grilla();
-        fila(cpu, 0, "Instrucciones:", instrucciones);
-        JPanel io = grilla();
-        fila(io, 0, "Instrucciones:", instruccionesIO);
-        fila(io, 1, "E/S cada (instr.):", cadaCiclosES);
-        fila(io, 2, "Duración E/S (ciclos):", duracionES);
-        JPanel conBuffer = grilla();
-        fila(conBuffer, 0, "Buffer:", buffer);
-        fila(conBuffer, 1, "Ciclos por elemento:", ciclosPorElemento);
-        fila(conBuffer, 2, "Elementos:", elementos);
-        especificos.add(cpu, TipoProceso.CPU_BOUND.name());
-        especificos.add(io, TipoProceso.IO_BOUND.name());
-        especificos.add(conBuffer, "BUFFER");
-
-        JPanel campos = new JPanel(new BorderLayout(0, 6));
-        JPanel comunes = grilla();
-        fila(comunes, 0, "Nombre:", nombre);
-        fila(comunes, 1, "Tipo:", tipo);
-        fila(comunes, 2, "Prioridad:", prioridad);
-        fila(comunes, 3, "Memoria:", memoria);
-        fila(comunes, 4, "Deadline (ciclos):", deadline);
-        fila(comunes, 5, "Computador:", computador);
-        campos.add(comunes, BorderLayout.NORTH);
-        campos.add(especificos, BorderLayout.CENTER);
+        JPanel campos = grilla();
+        fila(campos, 0, "Nombre:", nombre);
+        fila(campos, 1, "Tipo:", tipo);
+        fila(campos, 2, "Prioridad:", prioridad);
+        fila(campos, 3, "Memoria:", memoria);
+        fila(campos, 4, "Deadline (ciclos):", deadline);
+        fila(campos, 5, "Computador:", computador);
+        filaTipo(campos, 0, "Instrucciones:", instrucciones);
+        filaTipo(campos, 1, "E/S cada (instr.):", cadaCiclosES);
+        filaTipo(campos, 2, "Duración E/S (ciclos):", duracionES);
+        filaTipo(campos, 3, "Buffer:", buffer);
+        filaTipo(campos, 4, "Ciclos por elemento:", ciclosPorElemento);
+        filaTipo(campos, 5, "Elementos:", elementos);
         tipo.addActionListener(e -> mostrarTipo());
         mostrarTipo();
         armar(campos);
@@ -94,13 +80,40 @@ public class DialogoProceso extends DialogoFormulario {
         });
     }
 
-    /** Muestra solo los campos del tipo elegido. */
+    /** Agrega una fila propia de un tipo, en la misma grilla y columnas que las comunes. */
+    private void filaTipo(JPanel campos, int indice, String etiqueta, JComponent campo) {
+        filasTipo[indice] = new JComponent[] {fila(campos, FILAS_COMUNES + indice, etiqueta, campo), campo};
+    }
+
+    /** Muestra solo las filas del tipo elegido. */
     private void mostrarTipo() {
         TipoProceso elegido = (TipoProceso) tipo.getSelectedItem();
-        cartas.show(especificos, elegido.usaBuffer() ? "BUFFER" : elegido.name());
+        int primera = elegido.usaBuffer() ? 3 : 0;
+        int ultima = elegido == TipoProceso.CPU_BOUND ? 0 : elegido == TipoProceso.IO_BOUND ? 2 : 5;
+        for (int i = 0; i < FILAS_TIPO; i++) {
+            boolean visible = i >= primera && i <= ultima;
+            filasTipo[i][0].setVisible(visible);
+            filasTipo[i][1].setVisible(visible);
+        }
         if (elegido.usaBuffer()) {
             cargarBuffers();
         }
+        reajustar();
+    }
+
+    @Override
+    protected void limpiarCampos() {
+        nombre.setText("");
+        prioridad.setText("");
+        memoria.setText("");
+        deadline.setText("");
+        instrucciones.setText("");
+        cadaCiclosES.setText("");
+        duracionES.setText("");
+        ciclosPorElemento.setText("");
+        elementos.setText("");
+        computador.setSelectedIndex(0);
+        tipo.setSelectedIndex(0);
     }
 
     /** Rellena la lista con los buffers que existen ahora, conservando la selección. */
@@ -137,7 +150,7 @@ public class DialogoProceso extends DialogoFormulario {
             instr = Validador.entero(instrucciones.getText(), "Instrucciones", 1, MAX_VALOR);
             revisar = new Validador.ResultadoEntero[] {prio, mem, dead, instr};
         } else if (elegido == TipoProceso.IO_BOUND) {
-            instr = Validador.entero(instruccionesIO.getText(), "Instrucciones", 1, MAX_VALOR);
+            instr = Validador.entero(instrucciones.getText(), "Instrucciones", 1, MAX_VALOR);
             cada = Validador.entero(cadaCiclosES.getText(), "E/S cada", 1, MAX_VALOR);
             dur = Validador.entero(duracionES.getText(), "Duración E/S", 1, MAX_VALOR);
             revisar = new Validador.ResultadoEntero[] {prio, mem, dead, instr, cada, dur};

@@ -41,15 +41,12 @@ public class PanelControl extends JPanel {
         fila1.add(etiquetaEstado);
         fila1.add(boton("Crear proceso", () -> abrir(dialogoProceso())));
         fila1.add(boton("Crear buffer", () -> abrir(dialogoBuffer())));
-        campoDuracion.setToolTipText("Duración de cada ciclo en milisegundos (0.." + Reloj.DURACION_MAXIMA_MS + ")");
-        campoMaxCiclos.setToolTipText("Ciclo en el que se detiene la simulación (0 = sin límite)");
         fila2.add(new JLabel("Ciclo (ms):"));
         fila2.add(campoDuracion);
         fila2.add(boton("Aplicar", this::aplicarDuracion));
         fila2.add(new JLabel("Parar en el ciclo:"));
         fila2.add(campoMaxCiclos);
         fila2.add(boton("Aplicar", this::aplicarMaxCiclos));
-        casillaInactividad.setToolTipText("Detiene la simulación si todos los computadores quedan sin procesos; no cuenta con un formulario abierto");
         casillaInactividad.setSelected(cluster.isApagadoInactividad());
         casillaInactividad.addActionListener(e -> cluster.setApagadoInactividad(casillaInactividad.isSelected()));
         fila2.add(casillaInactividad);

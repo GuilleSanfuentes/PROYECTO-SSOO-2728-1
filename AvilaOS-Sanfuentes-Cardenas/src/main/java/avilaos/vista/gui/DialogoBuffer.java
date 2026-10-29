@@ -21,12 +21,20 @@ public class DialogoBuffer extends DialogoFormulario {
         for (int i = 0; i < cluster.cantidadComputadores(); i++) {
             anfitrion.addItem(cluster.getComputador(i).getNombre());
         }
-        capacidad.setToolTipText("Entre 1 y " + ConfiguracionSistema.MAX_CAPACIDAD_BUFFER + "; ocupa esa cantidad de RAM");
         JPanel campos = grilla();
         fila(campos, 0, "Nombre:", nombre);
         fila(campos, 1, "Capacidad:", capacidad);
         fila(campos, 2, "Anfitrión:", anfitrion);
         armar(campos);
+    }
+
+    @Override
+    protected void limpiarCampos() {
+        nombre.setText("");
+        capacidad.setText("");
+        if (anfitrion.getItemCount() > 0) {
+            anfitrion.setSelectedIndex(0);
+        }
     }
 
     @Override
