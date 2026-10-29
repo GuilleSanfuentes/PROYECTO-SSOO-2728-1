@@ -44,8 +44,8 @@ public class PanelComputador extends JPanel {
     private final JComboBox<PoliticaTipo> selectorPolitica = new JComboBox<>(PoliticaTipo.values());
     private final JLabel etiquetaQuantum = new JLabel("Quantum:");
     private final CampoEditable campoQuantum = new CampoEditable(4);
-    private final JButton botonQuantum = new JButton("Aplicar");
-    private final JLabel errorPolitica = new JLabel(" ");
+    private final JButton botonQuantum = new BotonSutil("Aplicar");
+    private final MensajeBreve errorPolitica = new MensajeBreve();
     private final Cluster cluster;
     private final int numero;
     private boolean actualizando;
@@ -74,7 +74,6 @@ public class PanelComputador extends JPanel {
         selectorPolitica.addActionListener(e -> cambiarPolitica());
         botonQuantum.addActionListener(e -> aplicarQuantum());
         campoQuantum.addActionListener(e -> aplicarQuantum());
-        errorPolitica.setForeground(ColoresEstado.ROJO);
         setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(new Color(208, 213, 220)), BorderFactory.createEmptyBorder(8, 8, 8, 8)));
         setPreferredSize(new Dimension(ANCHO, 660));
@@ -190,21 +189,26 @@ public class PanelComputador extends JPanel {
             return;
         }
         PoliticaTipo elegida = (PoliticaTipo) selectorPolitica.getSelectedItem();
-        errorPolitica.setText(cluster.cambiarPolitica(numero, elegida) ? " " : "No se pudo cambiar la política");
+        if (cluster.cambiarPolitica(numero, elegida)) {
+            errorPolitica.limpiar();
+        } else {
+            errorPolitica.error("No se pudo cambiar la política");
+        }
     }
 
     /** Valida el quantum escrito y, si es correcto, lo aplica al clúster. */
     private void aplicarQuantum() {
         Validador.ResultadoEntero r = Validador.entero(campoQuantum.getText(), "Quantum", 1, Planificador.QUANTUM_MAXIMO);
         if (!r.valido()) {
-            errorPolitica.setText(r.motivo());
+            errorPolitica.error(r.motivo());
             return;
         }
-        boolean cambiado = cluster.cambiarQuantum(numero, r.valor());
-        if (cambiado) {
-            campoQuantum.confirmar();
+        if (!cluster.cambiarQuantum(numero, r.valor())) {
+            errorPolitica.error("No se pudo cambiar el quantum");
+            return;
         }
-        errorPolitica.setText(cambiado ? " " : "No se pudo cambiar el quantum");
+        campoQuantum.confirmar();
+        errorPolitica.exito("Quantum aplicado: " + r.valor());
     }
 
     private static void fila(JPanel tarjeta, int fila, String etiqueta, JComponent valor) {

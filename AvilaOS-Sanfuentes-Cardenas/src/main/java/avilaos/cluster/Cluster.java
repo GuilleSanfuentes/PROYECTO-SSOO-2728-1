@@ -20,6 +20,7 @@ import avilaos.sync.Buffer;
 import avilaos.sync.DatosBuffer;
 import avilaos.sync.RegistroBuffers;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /** ÁvilaOS completo: reloj global, computadores y puerta de entrada para crear procesos y cambiar parámetros. */
 public class Cluster implements ObservadorReloj {
@@ -39,6 +40,8 @@ public class Cluster implements ObservadorReloj {
     private final Semaphore mutexCreados = new Semaphore(1);
     private volatile int maxCiclos;
     private volatile boolean inactivo;
+    private volatile boolean inactividadActiva;
+    private final AtomicInteger formulariosAbiertos = new AtomicInteger();
 
     /** Arma el clúster según la configuración: un reloj, N computadores y sus hilos. */
     public Cluster(ConfiguracionSistema config, LogEventos log) {
@@ -46,6 +49,7 @@ public class Cluster implements ObservadorReloj {
         this.log = log;
         this.parada = config.getParada();
         this.maxCiclos = parada.maxCiclos();
+        this.inactividadActiva = parada.inactividadActiva();
         this.reloj = new Reloj(config.getDuracionCicloMs());
         int faseES = reloj.agregarFase("E/S y red");
         int faseCPU = reloj.agregarFase("CPU");
@@ -255,7 +259,7 @@ public class Cluster implements ObservadorReloj {
             mutexCreados.release();
         }
         CondicionesParada vigente = new CondicionesParada(maxCiclos, parada.limiteTiempoActivo(),
-                parada.limiteTiempoSegundos(), parada.inactividadActiva(), parada.inactividadSegundos());
+                parada.limiteTiempoSegundos(), inactividadActiva, parada.inactividadSegundos());
         return new ConfiguracionSistema(Debug.isActivo(), reloj.getDuracionCicloMs(), vigente, config.getLatenciaRed(),
                 config.getEnvejecimientoCadaCiclos(), configComputadores, datosBuffers, datosProcesos, 0);
     }
@@ -327,6 +331,25 @@ public class Cluster implements ObservadorReloj {
         return true;
     }
 
+    /** Activa o desactiva en caliente el apagado por inactividad. */
+    public void setApagadoInactividad(boolean activo) {
+        inactividadActiva = activo;
+        Debug.ok(ORIGEN, "apagado por inactividad " + (activo ? "activado" : "desactivado"));
+    }
+
+    public boolean isApagadoInactividad() {
+        return inactividadActiva;
+    }
+
+    /** Avisa que un formulario se abrió o se cerró; con alguno abierto no corre el tiempo de inactividad. */
+    public void formularioAbierto(boolean abierto) {
+        if (abierto) {
+            formulariosAbiertos.incrementAndGet();
+        } else if (formulariosAbiertos.decrementAndGet() < 0) {
+            formulariosAbiertos.set(0);
+        }
+    }
+
     /** Agrega un observador que se avisa al final de cada ciclo, después de los kernels. */
     public void agregarObservador(ObservadorReloj observador) {
         observadores.agregarFinal(observador);
@@ -369,7 +392,7 @@ public class Cluster implements ObservadorReloj {
         log.registrar(reloj.getCiclo(), "Simulación iniciada (" + reloj.getDuracionCicloMs() + " ms por ciclo; "
                 + parada.describir() + ")");
         boolean iniciado = reloj.iniciar();
-        if (iniciado && (parada.limiteTiempoActivo() || parada.inactividadActiva())) {
+        if (iniciado) {
             Thread vigilante = new Thread(this::vigilar, "Hilo-Vigilante");
             vigilante.setDaemon(true);
             vigilante.start();
@@ -394,12 +417,12 @@ public class Cluster implements ObservadorReloj {
                 continue;
             }
             enMarcha += paso;
-            sinActividad = inactivo ? sinActividad + paso : 0;
+            sinActividad = inactivo && formulariosAbiertos.get() == 0 ? sinActividad + paso : 0;
             if (parada.limiteTiempoActivo() && enMarcha >= limiteTiempo) {
                 detenerPor("se cumplió el límite de " + parada.limiteTiempoSegundos() + " segundos");
                 return;
             }
-            if (parada.inactividadActiva() && sinActividad >= limiteInactividad) {
+            if (inactividadActiva && sinActividad >= limiteInactividad) {
                 detenerPor("todos los computadores llevan " + parada.inactividadSegundos()
                         + " segundos sin procesos y con la CPU ociosa");
                 return;

@@ -8,18 +8,27 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.Window;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.Timer;
 import javax.swing.border.EmptyBorder;
 
 /** Base de los formularios de creación: filas etiqueta/campo, línea de mensaje y botones Crear y Cerrar. */
 abstract class DialogoFormulario extends JDialog {
 
     protected final Cluster cluster;
+    private static final int ANCHO_MINIMO = 380;
+    private static final int RETARDO_CIERRE_MS = 1500;
+
     private final JLabel mensaje = new JLabel(" ");
+    private final Timer cierre = new Timer(RETARDO_CIERRE_MS, e -> setVisible(false));
+    private boolean contado;
+    private int ancho;
 
     /** Arma el diálogo no modal, para que la simulación siga a la vista mientras se llena. */
     protected DialogoFormulario(Window dueno, Cluster cluster, String titulo) {
@@ -27,13 +36,33 @@ abstract class DialogoFormulario extends JDialog {
         this.cluster = cluster;
         setDefaultCloseOperation(HIDE_ON_CLOSE);
         setLayout(new BorderLayout());
+        cierre.setRepeats(false);
+        addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentShown(ComponentEvent e) {
+                if (!contado) {
+                    contado = true;
+                    cluster.formularioAbierto(true);
+                }
+            }
+
+            @Override
+            public void componentHidden(ComponentEvent e) {
+                cierre.stop();
+                mensaje.setText(" ");
+                if (contado) {
+                    contado = false;
+                    cluster.formularioAbierto(false);
+                }
+            }
+        });
     }
 
     /** Termina de armar el diálogo con el panel de campos ya construido. */
     protected void armar(JPanel campos) {
         campos.setBorder(new EmptyBorder(12, 12, 4, 12));
-        JButton crear = new JButton("Crear");
-        JButton cerrar = new JButton("Cerrar");
+        JButton crear = new BotonSutil("Crear");
+        JButton cerrar = new BotonSutil("Cerrar");
         crear.addActionListener(e -> crear());
         cerrar.addActionListener(e -> setVisible(false));
         getRootPane().setDefaultButton(crear);
@@ -47,8 +76,18 @@ abstract class DialogoFormulario extends JDialog {
         add(campos, BorderLayout.CENTER);
         add(sur, BorderLayout.SOUTH);
         pack();
+        ancho = Math.max(getWidth(), ANCHO_MINIMO);
+        setSize(ancho, getHeight());
         setMinimumSize(getSize());
         setLocationRelativeTo(getOwner());
+    }
+
+    /** Pone el texto en varias líneas dentro del ancho fijo y ajusta solo el alto. */
+    private void mostrar(String texto, Color color) {
+        mensaje.setForeground(color);
+        mensaje.setText("<html><body style='width:" + (ancho - 40) + "px'>" + escapar(texto) + "</body></html>");
+        pack();
+        setSize(ancho, getHeight());
     }
 
     /** Valida los campos y crea el elemento; muestra el motivo si se rechaza. */
@@ -75,16 +114,14 @@ abstract class DialogoFormulario extends JDialog {
 
     /** Muestra un rechazo en rojo sin cerrar el formulario. */
     protected void error(String texto) {
-        mensaje.setForeground(ColoresEstado.ROJO);
-        mensaje.setText("<html><body style='width:300px'>" + escapar(texto) + "</body></html>");
-        pack();
+        cierre.stop();
+        mostrar(texto, ColoresEstado.ROJO);
     }
 
-    /** Muestra una confirmación en verde. */
+    /** Muestra una confirmación en verde y cierra el formulario a los 1,5 segundos. */
     protected void exito(String texto) {
-        mensaje.setForeground(new Color(25, 135, 84));
-        mensaje.setText("<html><body style='width:300px'>" + escapar(texto) + "</body></html>");
-        pack();
+        mostrar(texto, new Color(25, 135, 84));
+        cierre.restart();
     }
 
     /** Impide crear si la simulación ya terminó. Devuelve true si se puede seguir. */

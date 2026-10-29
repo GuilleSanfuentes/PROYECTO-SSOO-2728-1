@@ -10,10 +10,13 @@ import avilaos.so.PCB;
 import avilaos.sync.Buffer;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
+import java.awt.Component;
 import java.awt.Window;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import javax.swing.DefaultListCellRenderer;
 import javax.swing.JComboBox;
+import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
 
@@ -46,6 +49,14 @@ public class DialogoProceso extends DialogoFormulario {
         for (int i = 0; i < cluster.cantidadComputadores(); i++) {
             computador.addItem(cluster.getComputador(i).getNombre());
         }
+        tipo.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> lista, Object valor, int indice, boolean seleccionado,
+                    boolean enfoque) {
+                return super.getListCellRendererComponent(lista, valor instanceof TipoProceso t ? t.getNombre() : valor,
+                        indice, seleccionado, enfoque);
+            }
+        });
         prioridad.setToolTipText(FabricaProcesos.PRIORIDAD_MAXIMA + " (más importante) a " + FabricaProcesos.PRIORIDAD_MINIMA);
 
         JPanel cpu = grilla();
