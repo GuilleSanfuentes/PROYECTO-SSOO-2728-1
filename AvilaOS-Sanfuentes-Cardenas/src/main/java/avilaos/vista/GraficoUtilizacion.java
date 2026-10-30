@@ -74,13 +74,27 @@ public final class GraficoUtilizacion {
             Debug.error(ORIGEN, "no se pudo crear la carpeta " + carpeta);
             return false;
         }
-        try {
-            ChartUtils.saveChartAsPNG(archivo, crear(registro), ANCHO_PNG, ALTO_PNG);
-        } catch (IOException e) {
-            Debug.error(ORIGEN, "no se pudo guardar " + ruta + ": " + e.getMessage());
+        return guardar(crear(registro), archivo);
+    }
+
+    /** Guarda como PNG el gráfico indicado (por ejemplo el que muestra la ventana). Devuelve false si falla. */
+    public static boolean exportarPNG(JFreeChart grafico, File archivo) {
+        File carpeta = archivo.getAbsoluteFile().getParentFile();
+        if (carpeta != null && !carpeta.isDirectory() && !carpeta.mkdirs()) {
+            Debug.error(ORIGEN, "no se pudo crear la carpeta " + carpeta);
             return false;
         }
-        Debug.ok(ORIGEN, "gráfico de utilización guardado en " + ruta);
+        return guardar(grafico, archivo);
+    }
+
+    private static boolean guardar(JFreeChart grafico, File archivo) {
+        try {
+            ChartUtils.saveChartAsPNG(archivo, grafico, ANCHO_PNG, ALTO_PNG);
+        } catch (IOException e) {
+            Debug.error(ORIGEN, "no se pudo guardar " + archivo + ": " + e.getMessage());
+            return false;
+        }
+        Debug.ok(ORIGEN, "gráfico de utilización guardado en " + archivo);
         return true;
     }
 }

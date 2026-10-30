@@ -1,13 +1,13 @@
 package avilaos.vista.gui;
 
 import avilaos.config.ArchivoConfiguracion;
+import avilaos.vista.GraficoUtilizacion;
 import java.awt.Component;
 import java.io.File;
 import javax.swing.JFileChooser;
-import javax.swing.JOptionPane;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
-/** Selectores de archivo para guardar y cargar la configuración, con sus avisos. */
+/** Selectores de archivo para guardar y cargar la configuración y para exportar el gráfico, con sus avisos. */
 final class SelectorConfiguracion {
 
     private static final String NOMBRE_BASE = "configuracion_";
@@ -18,24 +18,20 @@ final class SelectorConfiguracion {
     /** Pide la ruta donde guardar (sugiere un nombre libre y confirma si sobrescribe); null si se cancela. */
     static File elegirParaGuardar(Component padre) {
         File carpeta = carpetaConfig();
-        JFileChooser selector = nuevoSelector(carpeta);
-        selector.setDialogTitle("Guardar configuración");
-        selector.setSelectedFile(new File(carpeta, nombreLibre(carpeta)));
-        while (selector.showSaveDialog(padre) == JFileChooser.APPROVE_OPTION) {
-            File archivo = selector.getSelectedFile();
-            if (!archivo.getName().toLowerCase().endsWith(".json")) {
-                archivo = new File(archivo.getParentFile(), archivo.getName() + ".json");
-            }
-            if (!archivo.exists() || confirmarSobrescribir(padre, archivo)) {
-                return archivo;
-            }
-        }
-        return null;
+        return elegirRutaNueva(padre, "Guardar configuración", carpeta, nombreLibre(carpeta),
+                "Configuración JSON (*.json)", "json");
+    }
+
+    /** Pide la ruta del PNG del gráfico (sugiere salida/utilizacion_cpu.png y confirma si sobrescribe); null si se cancela. */
+    static File elegirParaExportarPNG(Component padre) {
+        File sugerido = new File(GraficoUtilizacion.RUTA_POR_DEFECTO).getAbsoluteFile();
+        return elegirRutaNueva(padre, "Exportar gráfico", sugerido.getParentFile(), sugerido.getName(),
+                "Imagen PNG (*.png)", "png");
     }
 
     /** Pide el archivo a cargar; null si se cancela. */
     static File elegirParaCargar(Component padre) {
-        JFileChooser selector = nuevoSelector(carpetaConfig());
+        JFileChooser selector = nuevoSelector(carpetaConfig(), "Configuración JSON (*.json)", "json");
         selector.setDialogTitle("Cargar configuración");
         if (selector.showOpenDialog(padre) == JFileChooser.APPROVE_OPTION) {
             return selector.getSelectedFile();
@@ -45,20 +41,31 @@ final class SelectorConfiguracion {
 
     /** Muestra un mensaje de error modal. */
     static void error(Component padre, String titulo, String mensaje) {
-        JOptionPane.showMessageDialog(padre, mensaje, titulo, JOptionPane.ERROR_MESSAGE);
+        Avisos.error(padre, titulo, mensaje);
     }
 
-    private static boolean confirmarSobrescribir(Component padre, File archivo) {
-        int respuesta = JOptionPane.showConfirmDialog(padre,
-                "Ya existe \"" + archivo.getName() + "\". ¿Quieres sobrescribirlo?",
-                "Sobrescribir archivo", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-        return respuesta == JOptionPane.YES_OPTION;
+    private static File elegirRutaNueva(Component padre, String titulo, File carpeta, String nombre,
+            String descripcion, String extension) {
+        JFileChooser selector = nuevoSelector(carpeta, descripcion, extension);
+        selector.setDialogTitle(titulo);
+        selector.setSelectedFile(new File(carpeta, nombre));
+        while (selector.showSaveDialog(padre) == JFileChooser.APPROVE_OPTION) {
+            File archivo = selector.getSelectedFile();
+            if (!archivo.getName().toLowerCase().endsWith("." + extension)) {
+                archivo = new File(archivo.getParentFile(), archivo.getName() + "." + extension);
+            }
+            if (!archivo.exists() || Avisos.confirmar(padre, "Sobrescribir archivo",
+                    "Ya existe \"" + archivo.getName() + "\". ¿Quieres sobrescribirlo?")) {
+                return archivo;
+            }
+        }
+        return null;
     }
 
-    private static JFileChooser nuevoSelector(File carpeta) {
+    private static JFileChooser nuevoSelector(File carpeta, String descripcion, String extension) {
         JFileChooser selector = new JFileChooser(carpeta);
         selector.setAcceptAllFileFilterUsed(false);
-        selector.setFileFilter(new FileNameExtensionFilter("Configuración JSON (*.json)", "json"));
+        selector.setFileFilter(new FileNameExtensionFilter(descripcion, extension));
         return selector;
     }
 
