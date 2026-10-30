@@ -40,12 +40,25 @@ public final class GraficoUtilizacion {
             }
             datos.addSeries(serie);
         }
+        return armar(datos);
+    }
+
+    /** Arma el gráfico con una serie vacía por nombre, para ir llenándolo en vivo desde la GUI. */
+    public static JFreeChart crearVacio(String[] nombres) {
+        XYSeriesCollection datos = new XYSeriesCollection();
+        for (String nombre : nombres) {
+            datos.addSeries(new XYSeries(nombre));
+        }
+        return armar(datos);
+    }
+
+    private static JFreeChart armar(XYSeriesCollection datos) {
         JFreeChart grafico = ChartFactory.createXYLineChart(
                 "Utilización de CPU por computador (ventana de " + RegistroUtilizacion.VENTANA + " ciclos)",
                 "Ciclo de reloj", "CPU ocupada (%)", datos, PlotOrientation.VERTICAL, true, true, false);
         XYPlot plot = grafico.getXYPlot();
         plot.getRangeAxis().setRange(-5, 105);
-        for (int i = 0; i < registro.cantidadSeries(); i++) {
+        for (int i = 0; i < datos.getSeriesCount(); i++) {
             plot.getRenderer().setSeriesStroke(i, new BasicStroke(Math.max(1.5f, 3.5f - i)));
         }
         plot.getDomainAxis().setStandardTickUnits(NumberAxis.createIntegerTickUnits());
