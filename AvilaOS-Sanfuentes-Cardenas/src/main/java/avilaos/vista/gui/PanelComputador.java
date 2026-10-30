@@ -38,6 +38,7 @@ public class PanelComputador extends JPanel {
     private final JButton botonVerPCB = new BotonSutil("Ver PCB");
     private final JLabel datosPCB = new JLabel("-");
     private final JLabel registros = new JLabel("-");
+    private final JLabel instruccionPC = new JLabel("-");
     private final JLabel prioridad = new JLabel("-");
     private final BarraColor barraProgreso = new BarraColor();
     private final BarraColor barraDeadline = new BarraColor();
@@ -123,6 +124,7 @@ public class PanelComputador extends JPanel {
         FilaProceso p = f.enCPU();
         enCPU = p;
         botonVerPCB.setEnabled(p != null);
+        instruccionPC.setText(f.instruccionPC());
         if (p == null) {
             proceso.setText("(ninguno)");
             datosPCB.setText("-");
@@ -220,11 +222,13 @@ public class PanelComputador extends JPanel {
         fila(tarjeta, 0, "Proceso", lineaProceso);
         fila(tarjeta, 1, "PCB", datosPCB);
         fila(tarjeta, 2, "Registros", registros);
-        fila(tarjeta, 3, "Prioridad", prioridad);
-        fila(tarjeta, 4, "Progreso", barraProgreso);
-        fila(tarjeta, 5, "Deadline", barraDeadline);
-        fila(tarjeta, 6, "Modo", modo);
-        fila(tarjeta, 7, "Acción", accion);
+        fila(tarjeta, 3, "Instrucción en PC", instruccionPC);
+        fila(tarjeta, 4, "Prioridad", prioridad);
+        fila(tarjeta, 5, "Progreso", barraProgreso);
+        fila(tarjeta, 6, "Deadline", barraDeadline);
+        fila(tarjeta, 7, "Modo", modo);
+        fila(tarjeta, 8, "Última acción", accion);
+        instruccionPC.setToolTipText("Instrucción guardada en la dirección del Contador (PC): la próxima que ejecutará la CPU");
         return tarjeta;
     }
 
