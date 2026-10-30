@@ -13,6 +13,8 @@ import avilaos.estructuras.ListaEnlazada;
 import avilaos.log.Debug;
 import avilaos.log.LogEventos;
 import avilaos.so.DatosProceso;
+import avilaos.so.FabricaProcesos;
+import avilaos.so.PCB;
 import avilaos.sync.DatosBuffer;
 import avilaos.vista.GraficoUtilizacion;
 import avilaos.vista.gui.FilaBuffer;
@@ -103,11 +105,11 @@ public final class PruebasPaso9 {
     private static void probarModelosDeTabla() {
         r.grupo("Modelos de tabla");
         FilaProceso fila = new FilaProceso(7, "P7-H1", "Calc", TipoProceso.CPU_BOUND, EstadoProceso.BLOQUEADO,
-                5, 3, 4, 10, 20, 30, false, "E/S: 3 ciclos");
+                5, 3, 4, 10, 20, 30, false, "E/S: 3 ciclos", 1, 64, 4, 0, 2, -1, "", 0, 0, 0);
         ModeloTablaPCB sinMotivo = new ModeloTablaPCB(false);
         ModeloTablaPCB conMotivo = new ModeloTablaPCB(true);
-        r.verificar("sin motivo: 5 columnas", sinMotivo.getColumnCount() == 5, String.valueOf(sinMotivo.getColumnCount()));
-        r.verificar("con motivo: 6 columnas", conMotivo.getColumnCount() == 6, String.valueOf(conMotivo.getColumnCount()));
+        r.verificar("sin motivo: 7 columnas", sinMotivo.getColumnCount() == 7, String.valueOf(sinMotivo.getColumnCount()));
+        r.verificar("con motivo: 8 columnas", conMotivo.getColumnCount() == 8, String.valueOf(conMotivo.getColumnCount()));
         r.verificar("vacío: 0 filas", conMotivo.getRowCount() == 0, "");
         AtomicInteger avisos = new AtomicInteger();
         conMotivo.addTableModelListener(e -> avisos.incrementAndGet());
@@ -120,10 +122,22 @@ public final class PruebasPaso9 {
                 String.valueOf(conMotivo.getValueAt(0, 1)));
         r.verificar("columna 2: prioridad 5>3 por envejecimiento", "5>3".equals(conMotivo.getValueAt(0, 2)),
                 String.valueOf(conMotivo.getValueAt(0, 2)));
-        r.verificar("columna 5: motivo", "E/S: 3 ciclos".equals(conMotivo.getValueAt(0, 5)),
-                String.valueOf(conMotivo.getValueAt(0, 5)));
-        r.verificar("progreso y deadline entregan la fila completa", conMotivo.getValueAt(0, 3) == fila
-                && conMotivo.getValueAt(0, 4) == fila && conMotivo.getColumnClass(3) == FilaProceso.class, "");
+        r.verificar("columna 3: memoria del PCB", "64".equals(conMotivo.getValueAt(0, 3)),
+                String.valueOf(conMotivo.getValueAt(0, 3)));
+        r.verificar("columna 4: tiempo restante (10 - 4 = 6)", "6".equals(conMotivo.getValueAt(0, 4)),
+                String.valueOf(conMotivo.getValueAt(0, 4)));
+        r.verificar("columna 7: motivo", "E/S: 3 ciclos".equals(conMotivo.getValueAt(0, 7)),
+                String.valueOf(conMotivo.getValueAt(0, 7)));
+        r.verificar("progreso y deadline entregan la fila completa", conMotivo.getValueAt(0, 5) == fila
+                && conMotivo.getValueAt(0, 6) == fila && conMotivo.getColumnClass(5) == FilaProceso.class, "");
+        PCB productor = FabricaProcesos.crear(DatosProceso.productor("Sensor-ficha", 2, 60, 400, "B9", 3, 10, 1), 0);
+        FilaProceso copia = FilaProceso.de(productor);
+        r.verificar("la copia del PCB trae todos sus elementos (ID, computador, estado, memoria, deadline, restante)",
+                copia.id() == productor.getId() && copia.computador() == 1 && copia.estado() == EstadoProceso.NUEVO
+                && copia.memoria() == 60 && copia.deadlineRestante() == 400 && copia.restantes() == 80
+                && copia.cicloPrimeraEjecucion() == -1, copia.toString());
+        r.verificar("la copia de un productor incluye su buffer y elementos", copia.usaBuffer() && "B9".equals(copia.buffer())
+                && copia.elementosObjetivo() == 10 && copia.elementosProcesados() == 0, copia.toString());
         r.verificar("fila(0) devuelve el mismo registro", conMotivo.fila(0) == fila, "");
 
         FilaBuffer buffer = new FilaBuffer("B1", 1, 2, 5, 3, 2, 1, 9, 7, "-", "P4-H1", "-");
