@@ -27,18 +27,18 @@ public class DialogoProceso extends DialogoFormulario {
     private static final int FILAS_COMUNES = 6;
     private static final int FILAS_TIPO = 6;
 
-    private final JTextField nombre = new JTextField(12);
+    private final JTextField nombre = new CampoTexto(12);
     private final JComboBox<TipoProceso> tipo = new JComboBox<>(TipoProceso.values());
-    private final JTextField prioridad = new JTextField(12);
-    private final JTextField memoria = new JTextField(12);
-    private final JTextField deadline = new JTextField(12);
+    private final JTextField prioridad = new CampoTexto(12);
+    private final JTextField memoria = new CampoTexto(12);
+    private final JTextField deadline = new CampoTexto(12);
     private final JComboBox<String> computador = new JComboBox<>();
-    private final JTextField instrucciones = new JTextField(12);
-    private final JTextField cadaCiclosES = new JTextField(12);
-    private final JTextField duracionES = new JTextField(12);
+    private final JTextField instrucciones = new CampoTexto(12);
+    private final JTextField cadaCiclosES = new CampoTexto(12);
+    private final JTextField duracionES = new CampoTexto(12);
     private final JComboBox<String> buffer = new JComboBox<>();
-    private final JTextField ciclosPorElemento = new JTextField(12);
-    private final JTextField elementos = new JTextField(12);
+    private final JTextField ciclosPorElemento = new CampoTexto(12);
+    private final JTextField elementos = new CampoTexto(12);
     private final JComponent[][] filasTipo = new JComponent[FILAS_TIPO][];
 
     /** Arma el formulario sobre el clúster indicado. */

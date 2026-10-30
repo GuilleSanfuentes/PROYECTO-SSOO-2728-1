@@ -11,8 +11,8 @@ import javax.swing.JTextField;
 /** Formulario para crear un buffer acotado: nombre, capacidad y computador anfitrión. */
 public class DialogoBuffer extends DialogoFormulario {
 
-    private final JTextField nombre = new JTextField(12);
-    private final JTextField capacidad = new JTextField(12);
+    private final JTextField nombre = new CampoTexto(12);
+    private final JTextField capacidad = new CampoTexto(12);
     private final JComboBox<String> anfitrion = new JComboBox<>();
 
     /** Arma el formulario sobre el clúster indicado. */

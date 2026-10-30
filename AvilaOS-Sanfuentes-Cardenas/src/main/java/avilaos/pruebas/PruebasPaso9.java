@@ -2,11 +2,18 @@ package avilaos.pruebas;
 
 import avilaos.cluster.Cluster;
 import avilaos.config.ArchivoConfiguracion;
+import avilaos.config.ConfigComputador;
+import avilaos.config.CondicionesParada;
+import avilaos.config.NuevaConfiguracion;
 import avilaos.config.ConfiguracionSistema;
 import avilaos.enums.EstadoProceso;
+import avilaos.enums.PoliticaTipo;
 import avilaos.enums.TipoProceso;
+import avilaos.estructuras.ListaEnlazada;
 import avilaos.log.Debug;
 import avilaos.log.LogEventos;
+import avilaos.so.DatosProceso;
+import avilaos.sync.DatosBuffer;
 import avilaos.vista.GraficoUtilizacion;
 import avilaos.vista.gui.FilaBuffer;
 import avilaos.vista.gui.FilaProceso;
@@ -61,6 +68,7 @@ public final class PruebasPaso9 {
         probarModelosDeTabla();
         probarCargaEstricta();
         probarFotoYPaneles(log);
+        probarNuevaConfiguracion();
         borrarCarpeta();
         Debug.setCiclo(0);
         r.cerrar();
@@ -229,6 +237,78 @@ public final class PruebasPaso9 {
         r.verificar("exportar el gráfico en vivo crea la carpeta y el PNG", exportado && png.length() > 0,
                 String.valueOf(png.length()));
         c.apagar();
+    }
+
+    /** La nueva configuración valida rangos y carga heredada, y lo que guarda se recarga sin errores. */
+    private static void probarNuevaConfiguracion() {
+        r.grupo("Nueva configuración desde la GUI");
+        ConfiguracionSistema actual = cargaActual(3);
+        NuevaConfiguracion.Resultado vacia = NuevaConfiguracion.construir(actual, 250, 7, computadores(3, 1024), false);
+        r.verificar("sin incluir carga: válida y sin buffers ni procesos", vacia.valido() && vacia.config().getBuffers().tamano() == 0
+                && vacia.config().getProcesos().tamano() == 0, String.valueOf(vacia.motivo()));
+        r.verificar("aplica ciclo, latencia y computadores", vacia.valido() && vacia.config().getDuracionCicloMs() == 250
+                && vacia.config().getLatenciaRed() == 7 && vacia.config().getComputadores().tamano() == 3, "");
+        r.verificar("hereda parada, envejecimiento y debugger", vacia.valido()
+                && vacia.config().getParada() == actual.getParada()
+                && vacia.config().getEnvejecimientoCadaCiclos() == 15 && vacia.config().isDebugger() == actual.isDebugger(), "");
+
+        NuevaConfiguracion.Resultado con = NuevaConfiguracion.construir(actual, 250, 7, computadores(3, 1024), true);
+        r.verificar("incluir carga: copia 1 buffer y 3 procesos", con.valido() && con.config().getBuffers().tamano() == 1
+                && con.config().getProcesos().tamano() == 3, String.valueOf(con.motivo()));
+        String ruta = carpeta.resolve("nueva.json").toString();
+        boolean guardada = con.valido() && ArchivoConfiguracion.guardarConfiguracion(con.config(), ruta);
+        String problema = guardada ? rechazo(ruta) : "no se guardó";
+        r.verificar("el archivo guardado se recarga sin errores", guardada && problema == null, String.valueOf(problema));
+        if (guardada && problema == null) {
+            ConfiguracionSistema recargada = ArchivoConfiguracion.cargarEstricto(ruta);
+            r.verificar("recargada: 3 computadores, 1 buffer, 3 procesos, latencia 7", recargada.getComputadores().tamano() == 3
+                    && recargada.getBuffers().tamano() == 1 && recargada.getProcesos().tamano() == 3
+                    && recargada.getLatenciaRed() == 7, "");
+        }
+
+        NuevaConfiguracion.Resultado sinComputador = NuevaConfiguracion.construir(actual, 250, 7, computadores(2, 1024), true);
+        r.verificar("proceso en un computador que ya no existe: se rechaza con el motivo", !sinComputador.valido()
+                && sinComputador.motivo().contains("no existe") && sinComputador.motivo().contains("Consumidor"), String.valueOf(sinComputador.motivo()));
+        r.verificar("sin incluir carga, quitar computadores sí se permite", NuevaConfiguracion.construir(actual, 250, 7, computadores(2, 1024), false).valido(), "");
+
+        NuevaConfiguracion.Resultado bufferGrande = NuevaConfiguracion.construir(actual, 250, 7, computadores(3, 4), true);
+        r.verificar("buffer que no cabe en la RAM: se rechaza", !bufferGrande.valido() && bufferGrande.motivo().contains("no cabe")
+                && bufferGrande.motivo().contains("B1"), String.valueOf(bufferGrande.motivo()));
+        r.verificar("varios problemas: avisa cuántos más", !bufferGrande.valido() && bufferGrande.motivo().contains("más)"),
+                String.valueOf(bufferGrande.motivo()));
+        NuevaConfiguracion.Resultado procesoGrande = NuevaConfiguracion.construir(actual, 250, 7, computadores(3, 50), true);
+        r.verificar("proceso con más memoria que la RAM: se rechaza", !procesoGrande.valido() && procesoGrande.motivo().contains("pide 100"),
+                String.valueOf(procesoGrande.motivo()));
+        r.verificar("rechazo no devuelve configuración", procesoGrande.config() == null, "");
+
+        r.verificar("ciclo negativo", !NuevaConfiguracion.construir(actual, -1, 7, computadores(3, 1024), false).valido(), "");
+        r.verificar("latencia fuera de rango", !NuevaConfiguracion.construir(actual, 250, 100000, computadores(3, 1024), false).valido(), "");
+        r.verificar("un solo computador", !NuevaConfiguracion.construir(actual, 250, 7, computadores(1, 1024), false).valido(), "");
+        r.verificar("más del máximo de computadores", !NuevaConfiguracion.construir(actual, 250, 7, computadores(9, 1024), false).valido(), "");
+        r.verificar("RAM cero", !NuevaConfiguracion.construir(actual, 250, 7, computadores(3, 0), false).valido(), "");
+        ListaEnlazada<ConfigComputador> sinQuantum = computadores(2, 1024);
+        sinQuantum.agregarFinal(new ConfigComputador(1024, PoliticaTipo.ROUND_ROBIN, 0));
+        r.verificar("quantum cero", !NuevaConfiguracion.construir(actual, 250, 7, sinQuantum, false).valido(), "");
+    }
+
+    /** Configuración de partida con un buffer B1 (capacidad 5, Computador 1) y tres procesos que usan hasta el último computador. */
+    private static ConfiguracionSistema cargaActual(int cantidad) {
+        ListaEnlazada<DatosBuffer> buffers = new ListaEnlazada<>();
+        buffers.agregarFinal(new DatosBuffer("B1", 5, 1));
+        ListaEnlazada<DatosProceso> procesos = new ListaEnlazada<>();
+        procesos.agregarFinal(DatosProceso.cpuBound("Calculadora", 3, 100, 500, 50, 0));
+        procesos.agregarFinal(DatosProceso.productor("Sensor", 2, 50, 500, "B1", 3, 4, DatosProceso.ASIGNACION_AUTOMATICA));
+        procesos.agregarFinal(DatosProceso.consumidor("Consumidor", 2, 50, 500, "B1", 3, 4, cantidad - 1));
+        return new ConfiguracionSistema(true, 500, new CondicionesParada(0, false, 20, true, 40), 2, 15,
+                computadores(cantidad, 1024), buffers, procesos, 0);
+    }
+
+    private static ListaEnlazada<ConfigComputador> computadores(int cantidad, int ram) {
+        ListaEnlazada<ConfigComputador> lista = new ListaEnlazada<>();
+        for (int i = 0; i < cantidad; i++) {
+            lista.agregarFinal(new ConfigComputador(ram, PoliticaTipo.FCFS, 3));
+        }
+        return lista;
     }
 
     /** Motivo del rechazo, o null si el archivo se cargó bien. */

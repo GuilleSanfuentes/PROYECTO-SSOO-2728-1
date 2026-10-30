@@ -25,6 +25,7 @@ public class PanelControl extends JPanel {
     private final MensajeBreve errorCampos = new MensajeBreve();
     private DialogoProceso dialogoProceso;
     private DialogoBuffer dialogoBuffer;
+    private DialogoConfiguracion dialogoConfiguracion;
 
     /** Arma la barra sobre el clúster indicado. */
     public PanelControl(Cluster cluster) {
@@ -43,6 +44,7 @@ public class PanelControl extends JPanel {
         fila1.add(boton("Crear buffer", () -> abrir(dialogoBuffer())));
         fila1.add(boton("Guardar configuración", this::guardarConfiguracion));
         fila1.add(boton("Cargar configuración", this::cargarConfiguracion));
+        fila1.add(boton("Nueva configuración", () -> abrir(dialogoConfiguracion())));
         fila2.add(new JLabel("Ciclo (ms):"));
         fila2.add(campoDuracion);
         fila2.add(boton("Aplicar", this::aplicarDuracion));
@@ -93,6 +95,13 @@ public class PanelControl extends JPanel {
             dialogoBuffer = new DialogoBuffer(SwingUtilities.getWindowAncestor(this), cluster);
         }
         return dialogoBuffer;
+    }
+
+    private DialogoConfiguracion dialogoConfiguracion() {
+        if (dialogoConfiguracion == null) {
+            dialogoConfiguracion = new DialogoConfiguracion(SwingUtilities.getWindowAncestor(this), cluster);
+        }
+        return dialogoConfiguracion;
     }
 
     private static void abrir(java.awt.Window dialogo) {
