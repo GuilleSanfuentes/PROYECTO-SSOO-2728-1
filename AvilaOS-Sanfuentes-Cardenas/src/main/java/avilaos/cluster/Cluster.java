@@ -234,6 +234,11 @@ public class Cluster implements ObservadorReloj {
         }
     }
 
+    /** Configuración con la que se armó este clúster (sin los cambios hechos durante la simulación). */
+    public ConfiguracionSistema configuracionInicial() {
+        return config;
+    }
+
     /** Configuración con el estado actual: parámetros vigentes y todos los buffers y procesos creados con éxito. */
     public ConfiguracionSistema configuracionActual() {
         ListaEnlazada<ConfigComputador> configComputadores = new ListaEnlazada<>();

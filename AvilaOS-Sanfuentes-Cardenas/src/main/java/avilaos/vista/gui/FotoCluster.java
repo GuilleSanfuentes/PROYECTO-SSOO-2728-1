@@ -8,6 +8,7 @@ import avilaos.metricas.CalculadorMetricas;
 import avilaos.metricas.MuestraUtilizacion;
 import avilaos.metricas.Metricas;
 import avilaos.metricas.MetricasBuffer;
+import avilaos.so.PCB;
 import avilaos.sync.Buffer;
 
 /** Foto inmutable del clúster en un ciclo: computadores, buffers, métricas, puntos del gráfico y las últimas líneas del log y de la consola. */
@@ -27,8 +28,10 @@ public record FotoCluster(long ciclo, FotoComputador[] computadores, FilaBuffer[
         ListaEnlazada<Buffer> lista = cluster.getBuffers().copiar();
         FilaBuffer[] buffers = new FilaBuffer[lista.tamano()];
         Nodo<Buffer> nodo = lista.getCabeza();
+        ListaEnlazada<PCB> procesos = lista.estaVacia() ? new ListaEnlazada<>() : cluster.todosLosProcesos();
         for (int i = 0; i < buffers.length && nodo != null; i++) {
-            buffers[i] = FilaBuffer.de(nodo.getDato().estado());
+            Buffer b = nodo.getDato();
+            buffers[i] = FilaBuffer.de(b.estado(), FilaBuffer.usuarios(b.getNombre(), b.getAnfitrion(), procesos));
             nodo = nodo.getSiguiente();
         }
         return new FotoCluster(cluster.getReloj().getCiclo(), fotos, buffers,

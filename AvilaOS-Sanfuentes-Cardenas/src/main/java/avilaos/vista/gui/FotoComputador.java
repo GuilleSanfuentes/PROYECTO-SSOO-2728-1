@@ -8,6 +8,7 @@ import avilaos.estructuras.Nodo;
 import avilaos.hardware.CPU;
 import avilaos.so.Kernel;
 import avilaos.so.PCB;
+import avilaos.so.programas.Instruccion;
 
 /** Foto inmutable de un computador: CPU, RAM, política y colas, lista para dibujarse en el hilo de Swing. */
 public record FotoComputador(
@@ -25,7 +26,8 @@ public record FotoComputador(
         FilaProceso[] nuevos,
         FilaProceso[] listos,
         FilaProceso[] bloqueados,
-        FilaProceso[] terminados) {
+        FilaProceso[] terminados,
+        String instruccionPC) {
 
     /** Toma la foto del computador en este instante. */
     public static FotoComputador de(Computador computador) {
@@ -38,7 +40,20 @@ public record FotoComputador(
                 computador.getRam().getUsada(), computador.getRam().getCapacidad(),
                 kernel.getPolitica(), kernel.getQuantum(),
                 filas(kernel.getNuevos()), filas(kernel.getListos()),
-                filas(kernel.getBloqueados()), filas(kernel.getTerminados()));
+                filas(kernel.getBloqueados()), filas(kernel.getTerminados()), instruccionEnPC(enEjecucion));
+    }
+
+    /** Instrucción guardada en la dirección que indica el Contador (PC) del proceso en CPU: la próxima a ejecutar. */
+    static String instruccionEnPC(PCB pcb) {
+        if (pcb == null) {
+            return "-";
+        }
+        Instruccion siguiente = pcb.instruccionActual();
+        if (siguiente == null) {
+            return "Contador " + pcb.getContador() + " → fin del programa";
+        }
+        return "Contador " + pcb.getContador() + " → " + siguiente
+                + (siguiente.modo() == ModoCPU.SISTEMA_OPERATIVO ? "  (modo SO)" : "  (modo usuario)");
     }
 
     private static FilaProceso[] filas(ListaEnlazada<PCB> lista) {

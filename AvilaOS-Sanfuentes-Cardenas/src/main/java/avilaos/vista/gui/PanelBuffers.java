@@ -14,7 +14,7 @@ import javax.swing.table.TableCellRenderer;
 /** Pestaña Buffers: una fila por buffer con barra de ocupación, semáforos, contadores y bloqueados. */
 public class PanelBuffers extends JPanel {
 
-    private static final int[] ANCHOS = {70, 100, 160, 55, 55, 55, 85, 85, 150, 150, 150};
+    private static final int[] ANCHOS = {60, 100, 120, 50, 50, 50, 80, 85, 110, 110, 110, 310};
 
     private final ModeloTablaBuffers modelo = new ModeloTablaBuffers();
     private final JLabel vacio = new JLabel("No hay buffers creados", SwingConstants.CENTER);
@@ -53,7 +53,7 @@ public class PanelBuffers extends JPanel {
         public Component getTableCellRendererComponent(JTable tabla, Object valor, boolean seleccionada,
                 boolean foco, int fila, int columna) {
             super.getTableCellRendererComponent(tabla, valor, false, false, fila, columna);
-            boolean hayBloqueados = columna >= ModeloTablaBuffers.COL_PRIMER_BLOQUEO
+            boolean hayBloqueados = columna >= ModeloTablaBuffers.COL_PRIMER_BLOQUEO && columna < ModeloTablaBuffers.COL_USADO_POR
                     && !FilaBuffer.NINGUNO.equals(valor);
             setForeground(hayBloqueados ? ColoresEstado.ROJO : ColoresEstado.TEXTO);
             setHorizontalAlignment(columna >= 3 && columna < ModeloTablaBuffers.COL_PRIMER_BLOQUEO

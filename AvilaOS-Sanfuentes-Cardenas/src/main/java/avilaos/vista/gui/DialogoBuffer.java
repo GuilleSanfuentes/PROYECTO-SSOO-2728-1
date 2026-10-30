@@ -11,13 +11,16 @@ import javax.swing.JTextField;
 /** Formulario para crear un buffer acotado: nombre, capacidad y computador anfitrión. */
 public class DialogoBuffer extends DialogoFormulario {
 
-    private final JTextField nombre = new JTextField(12);
-    private final JTextField capacidad = new JTextField(12);
+    private final JTextField nombre = new CampoTexto(12);
+    private final JTextField capacidad = new CampoTexto(12);
     private final JComboBox<String> anfitrion = new JComboBox<>();
 
     /** Arma el formulario sobre el clúster indicado. */
     public DialogoBuffer(Window dueno, Cluster cluster) {
         super(dueno, cluster, "Crear buffer");
+        FiltroEntrada.identificador(nombre);
+        FiltroEntrada.soloDigitos(capacidad, String.valueOf(ConfiguracionSistema.MAX_CAPACIDAD_BUFFER).length());
+        nombre.setToolTipText("Letras, números, - y _ (sin espacios), hasta " + FiltroEntrada.LARGO_IDENTIFICADOR + " caracteres");
         for (int i = 0; i < cluster.cantidadComputadores(); i++) {
             anfitrion.addItem(cluster.getComputador(i).getNombre());
         }

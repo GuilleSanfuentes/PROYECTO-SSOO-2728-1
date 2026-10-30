@@ -25,6 +25,7 @@ public class PanelControl extends JPanel {
     private final MensajeBreve errorCampos = new MensajeBreve();
     private DialogoProceso dialogoProceso;
     private DialogoBuffer dialogoBuffer;
+    private DialogoConfiguracion dialogoConfiguracion;
 
     /** Arma la barra sobre el clúster indicado. */
     public PanelControl(Cluster cluster) {
@@ -43,6 +44,7 @@ public class PanelControl extends JPanel {
         fila1.add(boton("Crear buffer", () -> abrir(dialogoBuffer())));
         fila1.add(boton("Guardar configuración", this::guardarConfiguracion));
         fila1.add(boton("Cargar configuración", this::cargarConfiguracion));
+        fila1.add(boton("Nueva configuración", () -> abrir(dialogoConfiguracion())));
         fila2.add(new JLabel("Ciclo (ms):"));
         fila2.add(campoDuracion);
         fila2.add(boton("Aplicar", this::aplicarDuracion));
@@ -53,9 +55,12 @@ public class PanelControl extends JPanel {
         casillaInactividad.addActionListener(e -> cluster.setApagadoInactividad(casillaInactividad.isSelected()));
         fila2.add(casillaInactividad);
         fila2.add(errorCampos);
+        FiltroEntrada.soloDigitos(campoDuracion, String.valueOf(Reloj.DURACION_MAXIMA_MS).length());
+        FiltroEntrada.soloDigitos(campoMaxCiclos, String.valueOf(Integer.MAX_VALUE).length() - 1);
         campoDuracion.addActionListener(e -> aplicarDuracion());
         campoMaxCiclos.addActionListener(e -> aplicarMaxCiclos());
-        botonIniciar.addActionListener(e -> cluster.iniciar());
+        botonIniciar.addActionListener(e -> iniciar());
+        botonStop.setToolTipText("Detiene la simulación y reinicia todo desde el archivo de configuración");
         botonPausa.addActionListener(e -> alternarPausa());
         botonStop.addActionListener(e -> detener());
         actualizarEstado();
@@ -74,8 +79,10 @@ public class PanelControl extends JPanel {
         boolean marcha = reloj.isEjecutando();
         boolean pausado = marcha && reloj.isPausado();
         boolean nuevo = !marcha && reloj.getCiclo() == 0;
-        etiquetaEstado.setText("Estado: " + (nuevo ? "listo para iniciar" : !marcha ? "detenida" : pausado ? "en pausa" : "en marcha"));
-        botonIniciar.setEnabled(nuevo);
+        etiquetaEstado.setText("Estado: " + (nuevo ? "listo para iniciar" : !marcha ? "terminada" : pausado ? "en pausa" : "en marcha"));
+        etiquetaEstado.setToolTipText(!marcha && !nuevo ? "Iniciar vuelve a empezar desde el archivo de configuración" : null);
+        botonIniciar.setEnabled(!marcha);
+        botonIniciar.setToolTipText(nuevo ? "Inicia la simulación" : "Reinicia todo desde el archivo de configuración y vuelve a correr");
         botonPausa.setEnabled(marcha);
         botonPausa.setText(pausado ? "Seguir" : "Pausar");
         botonStop.setEnabled(marcha);
@@ -93,6 +100,13 @@ public class PanelControl extends JPanel {
             dialogoBuffer = new DialogoBuffer(SwingUtilities.getWindowAncestor(this), cluster);
         }
         return dialogoBuffer;
+    }
+
+    private DialogoConfiguracion dialogoConfiguracion() {
+        if (dialogoConfiguracion == null) {
+            dialogoConfiguracion = new DialogoConfiguracion(SwingUtilities.getWindowAncestor(this), cluster);
+        }
+        return dialogoConfiguracion;
     }
 
     private static void abrir(java.awt.Window dialogo) {
@@ -183,13 +197,49 @@ public class PanelControl extends JPanel {
         actualizarEstado();
     }
 
+    /** Fin de la simulación: muestra el estado final y desactiva todos los botones y campos de la barra. */
+    public void bloquearTodo() {
+        etiquetaEstado.setText("Estado: procesos finalizados");
+        etiquetaEstado.setToolTipText(null);
+        desactivar(this);
+    }
+
+    private static void desactivar(java.awt.Container contenedor) {
+        for (java.awt.Component hijo : contenedor.getComponents()) {
+            if (hijo instanceof javax.swing.AbstractButton || hijo instanceof javax.swing.text.JTextComponent) {
+                hijo.setEnabled(false);
+            } else if (hijo instanceof java.awt.Container interno) {
+                desactivar(interno);
+            }
+        }
+    }
+
+    /** Muestra un aviso breve en la barra (verde si es confirmación, rojo si es error). */
+    public void avisar(String texto, boolean esError) {
+        if (esError) {
+            errorCampos.error(texto);
+        } else {
+            errorCampos.exito(texto);
+        }
+    }
+
+    /** Inicia la simulación; si ya corrió y terminó, reinicia todo y la vuelve a correr. */
+    private void iniciar() {
+        if (cluster.getReloj().getCiclo() == 0) {
+            cluster.iniciar();
+            actualizarEstado();
+        } else if (SwingUtilities.getWindowAncestor(this) instanceof VentanaPrincipal ventana) {
+            botonIniciar.setEnabled(false);
+            ventana.reiniciar(true);
+        }
+    }
+
+    /** Stop: detiene la simulación y reinicia todos los datos, listo para Iniciar o cargar otra configuración. */
     private void detener() {
         botonStop.setEnabled(false);
-        Thread hilo = new Thread(() -> {
-            cluster.detener();
-            javax.swing.SwingUtilities.invokeLater(this::actualizarEstado);
-        }, "Hilo-Stop-GUI");
-        hilo.setDaemon(true);
-        hilo.start();
+        botonPausa.setEnabled(false);
+        if (SwingUtilities.getWindowAncestor(this) instanceof VentanaPrincipal ventana) {
+            ventana.reiniciar(false);
+        }
     }
 }

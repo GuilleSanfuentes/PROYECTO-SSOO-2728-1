@@ -1,0 +1,27 @@
+{
+  "debugger": true,
+  "simulacion": {
+    "duracionCicloMs": 500,
+    "maxCiclos": 200,
+    "limiteTiempoActivo": true,
+    "limiteTiempoSegundos": 20,
+    "apagadoInactividadActivo": true,
+    "apagadoInactividadSegundos": 40,
+    "latenciaRed": 2,
+    "envejecimientoCadaCiclos": 10
+  },
+  "computadores": [
+    {
+      "ram": 1024,
+      "politica": "FCFS",
+      "quantum": 3
+    },
+    {
+      "ram": 512,
+      "politica": "ROUND_ROBIN",
+      "quantum": 4
+    }
+  ],
+  "buffers": [],
+  "procesos": []
+}

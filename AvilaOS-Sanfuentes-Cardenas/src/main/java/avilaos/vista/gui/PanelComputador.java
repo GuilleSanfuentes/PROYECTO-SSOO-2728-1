@@ -26,6 +26,7 @@ import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
 
 /** Columna de un computador: CPU con su proceso, RAM, política y las colas Nuevos, Listos, Bloqueados y Terminados. */
 public class PanelComputador extends JPanel {
@@ -34,7 +35,10 @@ public class PanelComputador extends JPanel {
 
     private final JLabel titulo = new JLabel();
     private final JLabel proceso = new JLabel("-");
+    private final JButton botonVerPCB = new BotonSutil("Ver PCB");
+    private final JLabel datosPCB = new JLabel("-");
     private final JLabel registros = new JLabel("-");
+    private final JLabel instruccionPC = new JLabel("-");
     private final JLabel prioridad = new JLabel("-");
     private final BarraColor barraProgreso = new BarraColor();
     private final BarraColor barraDeadline = new BarraColor();
@@ -57,6 +61,8 @@ public class PanelComputador extends JPanel {
     private final JLabel cuentaListos = new JLabel();
     private final JLabel cuentaBloqueados = new JLabel();
     private final JLabel cuentaTerminados = new JLabel();
+    private FilaProceso enCPU;
+    private DialogoPCB ficha;
 
     /** Arma la columna vacía del computador indicado; los datos llegan con mostrar. */
     public PanelComputador(Cluster cluster, int numero) {
@@ -72,6 +78,17 @@ public class PanelComputador extends JPanel {
             }
         });
         selectorPolitica.addActionListener(e -> cambiarPolitica());
+        botonVerPCB.setToolTipText("Ver el PCB completo del proceso en CPU");
+        botonVerPCB.addActionListener(e -> {
+            if (enCPU != null) {
+                abrirFicha(enCPU);
+            }
+        });
+        tablaNuevos.alHacerClic(this::abrirFicha);
+        tablaListos.alHacerClic(this::abrirFicha);
+        tablaBloqueados.alHacerClic(this::abrirFicha);
+        tablaTerminados.alHacerClic(this::abrirFicha);
+        FiltroEntrada.soloDigitos(campoQuantum, String.valueOf(Planificador.QUANTUM_MAXIMO).length());
         botonQuantum.addActionListener(e -> aplicarQuantum());
         campoQuantum.addActionListener(e -> aplicarQuantum());
         setBorder(BorderFactory.createCompoundBorder(
@@ -105,14 +122,20 @@ public class PanelComputador extends JPanel {
     public void mostrar(FotoComputador f) {
         titulo.setText(f.nombre());
         FilaProceso p = f.enCPU();
+        enCPU = p;
+        botonVerPCB.setEnabled(p != null);
+        instruccionPC.setText(f.instruccionPC());
         if (p == null) {
             proceso.setText("(ninguno)");
+            datosPCB.setText("-");
             registros.setText("Contador (PC): -    MAR: -");
             prioridad.setText("-");
             barraProgreso.setDatos(0, ColoresEstado.VERDE, "", Color.WHITE);
             barraDeadline.setDatos(0, ColoresEstado.GRIS, "", Color.WHITE);
         } else {
             proceso.setText(p.etiqueta() + " " + p.nombre() + " (" + p.tipo().getNombre() + ")");
+            datosPCB.setText("ID " + p.id() + " · Comp. " + p.computador() + " · " + p.estado().getNombre()
+                    + " · Mem " + p.memoria() + " · Restan " + p.restantes() + " instr.");
             registros.setText("Contador (PC): " + f.contadorCPU() + "    MAR: " + f.marCPU());
             prioridad.setText(p.prioridadTexto());
             barraProgreso.setDatos(p.total() > 0 ? (double) p.hechas() / p.total() : 0, ColoresEstado.VERDE,
@@ -152,18 +175,60 @@ public class PanelComputador extends JPanel {
         cuentaListos.setText(String.valueOf(f.listos().length));
         cuentaBloqueados.setText(String.valueOf(f.bloqueados().length));
         cuentaTerminados.setText(String.valueOf(f.terminados().length));
+        actualizarFicha(f);
+    }
+
+    /** Abre la ficha del PCB del proceso; si ya había una abierta en esta columna, la reemplaza. */
+    private void abrirFicha(FilaProceso fila) {
+        if (ficha != null) {
+            ficha.dispose();
+        }
+        ficha = new DialogoPCB(SwingUtilities.getWindowAncestor(this), fila);
+        ficha.setVisible(true);
+    }
+
+    /** Refresca la ficha abierta con la copia más reciente de su proceso. */
+    private void actualizarFicha(FotoComputador f) {
+        if (ficha == null || !ficha.isDisplayable()) {
+            return;
+        }
+        FilaProceso actual = buscar(ficha.getIdProceso(), f);
+        if (actual != null) {
+            ficha.actualizar(actual);
+        }
+    }
+
+    /** Busca el proceso por ID en la CPU y en las cuatro colas de la foto. */
+    private static FilaProceso buscar(int id, FotoComputador f) {
+        if (f.enCPU() != null && f.enCPU().id() == id) {
+            return f.enCPU();
+        }
+        for (FilaProceso[] cola : new FilaProceso[][]{f.nuevos(), f.listos(), f.bloqueados(), f.terminados()}) {
+            for (FilaProceso fila : cola) {
+                if (fila.id() == id) {
+                    return fila;
+                }
+            }
+        }
+        return null;
     }
 
     private JPanel tarjetaCPU() {
         JPanel tarjeta = new JPanel(new GridBagLayout());
         tarjeta.setBorder(BorderFactory.createTitledBorder("CPU"));
-        fila(tarjeta, 0, "Proceso", proceso);
-        fila(tarjeta, 1, "Registros", registros);
-        fila(tarjeta, 2, "Prioridad", prioridad);
-        fila(tarjeta, 3, "Progreso", barraProgreso);
-        fila(tarjeta, 4, "Deadline", barraDeadline);
-        fila(tarjeta, 5, "Modo", modo);
-        fila(tarjeta, 6, "Acción", accion);
+        JPanel lineaProceso = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        lineaProceso.add(proceso);
+        lineaProceso.add(botonVerPCB);
+        fila(tarjeta, 0, "Proceso", lineaProceso);
+        fila(tarjeta, 1, "PCB", datosPCB);
+        fila(tarjeta, 2, "Registros", registros);
+        fila(tarjeta, 3, "Instrucción en PC", instruccionPC);
+        fila(tarjeta, 4, "Prioridad", prioridad);
+        fila(tarjeta, 5, "Progreso", barraProgreso);
+        fila(tarjeta, 6, "Deadline", barraDeadline);
+        fila(tarjeta, 7, "Modo", modo);
+        fila(tarjeta, 8, "Última acción", accion);
+        instruccionPC.setToolTipText("Instrucción guardada en la dirección del Contador (PC): la próxima que ejecutará la CPU");
         return tarjeta;
     }
 

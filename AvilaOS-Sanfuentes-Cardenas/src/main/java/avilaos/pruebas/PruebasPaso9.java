@@ -2,11 +2,20 @@ package avilaos.pruebas;
 
 import avilaos.cluster.Cluster;
 import avilaos.config.ArchivoConfiguracion;
+import avilaos.config.ConfigComputador;
+import avilaos.config.CondicionesParada;
+import avilaos.config.NuevaConfiguracion;
 import avilaos.config.ConfiguracionSistema;
 import avilaos.enums.EstadoProceso;
+import avilaos.enums.PoliticaTipo;
 import avilaos.enums.TipoProceso;
+import avilaos.estructuras.ListaEnlazada;
 import avilaos.log.Debug;
 import avilaos.log.LogEventos;
+import avilaos.so.DatosProceso;
+import avilaos.so.FabricaProcesos;
+import avilaos.so.PCB;
+import avilaos.sync.DatosBuffer;
 import avilaos.vista.GraficoUtilizacion;
 import avilaos.vista.gui.FilaBuffer;
 import avilaos.vista.gui.FilaProceso;
@@ -17,7 +26,9 @@ import avilaos.vista.gui.ModeloTablaTexto;
 import avilaos.vista.gui.PanelGrafico;
 import avilaos.vista.gui.PanelMetricas;
 import avilaos.vista.gui.Validador;
+import avilaos.vista.gui.FiltroEntrada;
 import java.io.File;
+import javax.swing.JTextField;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -59,8 +70,10 @@ public final class PruebasPaso9 {
         }
         probarValidador();
         probarModelosDeTabla();
+        probarEntradasRestringidas();
         probarCargaEstricta();
         probarFotoYPaneles(log);
+        probarNuevaConfiguracion();
         borrarCarpeta();
         Debug.setCiclo(0);
         r.cerrar();
@@ -91,15 +104,39 @@ public final class PruebasPaso9 {
                 Validador.entero("3000000000", "X", 0, Integer.MAX_VALUE).motivo());
     }
 
+    /** Los campos solo aceptan los caracteres válidos y hasta su largo máximo, también al pegar texto. */
+    private static void probarEntradasRestringidas() {
+        r.grupo("Entradas restringidas (solo se puede escribir lo válido)");
+        JTextField numero = new JTextField();
+        FiltroEntrada.soloDigitos(numero, 3);
+        numero.setText("1a2-3");
+        r.verificar("campo numérico descarta letras y signos: '1a2-3' -> '123'", "123".equals(numero.getText()), numero.getText());
+        numero.setText("98765");
+        r.verificar("campo numérico respeta el máximo de 3 cifras", "987".equals(numero.getText()), numero.getText());
+        numero.setText("-5");
+        r.verificar("no se pueden escribir negativos", "5".equals(numero.getText()), numero.getText());
+        JTextField nombre = new JTextField();
+        FiltroEntrada.nombre(nombre);
+        nombre.setText("Calc 1!@#$");
+        r.verificar("nombre de proceso: letras, números y espacios", "Calc 1".equals(nombre.getText()), nombre.getText());
+        nombre.setText("x".repeat(40));
+        r.verificar("nombre de proceso: máximo " + FiltroEntrada.LARGO_NOMBRE + " caracteres",
+                nombre.getText().length() == FiltroEntrada.LARGO_NOMBRE, String.valueOf(nombre.getText().length()));
+        JTextField buffer = new JTextField();
+        FiltroEntrada.identificador(buffer);
+        buffer.setText("B 1#");
+        r.verificar("nombre de buffer: sin espacios ni símbolos ('B 1#' -> 'B1')", "B1".equals(buffer.getText()), buffer.getText());
+    }
+
     /** Los modelos de tabla informan filas, columnas y valores, y avisan a la tabla cuando cambian. */
     private static void probarModelosDeTabla() {
         r.grupo("Modelos de tabla");
         FilaProceso fila = new FilaProceso(7, "P7-H1", "Calc", TipoProceso.CPU_BOUND, EstadoProceso.BLOQUEADO,
-                5, 3, 4, 10, 20, 30, false, "E/S: 3 ciclos");
+                5, 3, 4, 10, 20, 30, false, "E/S: 3 ciclos", 1, 64, 4, 0, 2, -1, "", 0, 0, 0);
         ModeloTablaPCB sinMotivo = new ModeloTablaPCB(false);
         ModeloTablaPCB conMotivo = new ModeloTablaPCB(true);
-        r.verificar("sin motivo: 5 columnas", sinMotivo.getColumnCount() == 5, String.valueOf(sinMotivo.getColumnCount()));
-        r.verificar("con motivo: 6 columnas", conMotivo.getColumnCount() == 6, String.valueOf(conMotivo.getColumnCount()));
+        r.verificar("sin motivo: 7 columnas", sinMotivo.getColumnCount() == 7, String.valueOf(sinMotivo.getColumnCount()));
+        r.verificar("con motivo: 8 columnas", conMotivo.getColumnCount() == 8, String.valueOf(conMotivo.getColumnCount()));
         r.verificar("vacío: 0 filas", conMotivo.getRowCount() == 0, "");
         AtomicInteger avisos = new AtomicInteger();
         conMotivo.addTableModelListener(e -> avisos.incrementAndGet());
@@ -112,16 +149,30 @@ public final class PruebasPaso9 {
                 String.valueOf(conMotivo.getValueAt(0, 1)));
         r.verificar("columna 2: prioridad 5>3 por envejecimiento", "5>3".equals(conMotivo.getValueAt(0, 2)),
                 String.valueOf(conMotivo.getValueAt(0, 2)));
-        r.verificar("columna 5: motivo", "E/S: 3 ciclos".equals(conMotivo.getValueAt(0, 5)),
-                String.valueOf(conMotivo.getValueAt(0, 5)));
-        r.verificar("progreso y deadline entregan la fila completa", conMotivo.getValueAt(0, 3) == fila
-                && conMotivo.getValueAt(0, 4) == fila && conMotivo.getColumnClass(3) == FilaProceso.class, "");
+        r.verificar("columna 3: memoria del PCB", "64".equals(conMotivo.getValueAt(0, 3)),
+                String.valueOf(conMotivo.getValueAt(0, 3)));
+        r.verificar("columna 4: tiempo restante (10 - 4 = 6)", "6".equals(conMotivo.getValueAt(0, 4)),
+                String.valueOf(conMotivo.getValueAt(0, 4)));
+        r.verificar("columna 7: motivo", "E/S: 3 ciclos".equals(conMotivo.getValueAt(0, 7)),
+                String.valueOf(conMotivo.getValueAt(0, 7)));
+        r.verificar("progreso y deadline entregan la fila completa", conMotivo.getValueAt(0, 5) == fila
+                && conMotivo.getValueAt(0, 6) == fila && conMotivo.getColumnClass(5) == FilaProceso.class, "");
+        PCB productor = FabricaProcesos.crear(DatosProceso.productor("Sensor-ficha", 2, 60, 400, "B9", 3, 10, 1), 0);
+        FilaProceso copia = FilaProceso.de(productor);
+        r.verificar("la copia del PCB trae todos sus elementos (ID, computador, estado, memoria, deadline, restante)",
+                copia.id() == productor.getId() && copia.computador() == 1 && copia.estado() == EstadoProceso.NUEVO
+                && copia.memoria() == 60 && copia.deadlineRestante() == 400 && copia.restantes() == 80
+                && copia.cicloPrimeraEjecucion() == -1, copia.toString());
+        r.verificar("la copia de un productor incluye su buffer y elementos", copia.usaBuffer() && "B9".equals(copia.buffer())
+                && copia.elementosObjetivo() == 10 && copia.elementosProcesados() == 0, copia.toString());
         r.verificar("fila(0) devuelve el mismo registro", conMotivo.fila(0) == fila, "");
 
-        FilaBuffer buffer = new FilaBuffer("B1", 1, 2, 5, 3, 2, 1, 9, 7, "-", "P4-H1", "-");
+        FilaBuffer buffer = new FilaBuffer("B1", 1, 2, 5, 3, 2, 1, 9, 7, "-", "P4-H1", "-", "P4-H1 Monitor (PC0, remoto)");
         ModeloTablaBuffers modeloBuffers = new ModeloTablaBuffers();
-        r.verificar("buffers: 11 columnas", modeloBuffers.getColumnCount() == 11, String.valueOf(modeloBuffers.getColumnCount()));
+        r.verificar("buffers: 12 columnas", modeloBuffers.getColumnCount() == 12, String.valueOf(modeloBuffers.getColumnCount()));
         modeloBuffers.setFilas(new FilaBuffer[]{buffer});
+        r.verificar("buffers: columna 'Usado por' con computador y acceso", "P4-H1 Monitor (PC0, remoto)".equals(modeloBuffers.getValueAt(0, 11)),
+                String.valueOf(modeloBuffers.getValueAt(0, 11)));
         r.verificar("buffers: nombre y anfitrión", "B1".equals(modeloBuffers.getValueAt(0, 0))
                 && "Computador 1".equals(modeloBuffers.getValueAt(0, 1)),
                 modeloBuffers.getValueAt(0, 0) + " / " + modeloBuffers.getValueAt(0, 1));
@@ -229,6 +280,78 @@ public final class PruebasPaso9 {
         r.verificar("exportar el gráfico en vivo crea la carpeta y el PNG", exportado && png.length() > 0,
                 String.valueOf(png.length()));
         c.apagar();
+    }
+
+    /** La nueva configuración valida rangos y carga heredada, y lo que guarda se recarga sin errores. */
+    private static void probarNuevaConfiguracion() {
+        r.grupo("Nueva configuración desde la GUI");
+        ConfiguracionSistema actual = cargaActual(3);
+        NuevaConfiguracion.Resultado vacia = NuevaConfiguracion.construir(actual, 250, 7, computadores(3, 1024), false);
+        r.verificar("sin incluir carga: válida y sin buffers ni procesos", vacia.valido() && vacia.config().getBuffers().tamano() == 0
+                && vacia.config().getProcesos().tamano() == 0, String.valueOf(vacia.motivo()));
+        r.verificar("aplica ciclo, latencia y computadores", vacia.valido() && vacia.config().getDuracionCicloMs() == 250
+                && vacia.config().getLatenciaRed() == 7 && vacia.config().getComputadores().tamano() == 3, "");
+        r.verificar("hereda parada, envejecimiento y debugger", vacia.valido()
+                && vacia.config().getParada() == actual.getParada()
+                && vacia.config().getEnvejecimientoCadaCiclos() == 15 && vacia.config().isDebugger() == actual.isDebugger(), "");
+
+        NuevaConfiguracion.Resultado con = NuevaConfiguracion.construir(actual, 250, 7, computadores(3, 1024), true);
+        r.verificar("incluir carga: copia 1 buffer y 3 procesos", con.valido() && con.config().getBuffers().tamano() == 1
+                && con.config().getProcesos().tamano() == 3, String.valueOf(con.motivo()));
+        String ruta = carpeta.resolve("nueva.json").toString();
+        boolean guardada = con.valido() && ArchivoConfiguracion.guardarConfiguracion(con.config(), ruta);
+        String problema = guardada ? rechazo(ruta) : "no se guardó";
+        r.verificar("el archivo guardado se recarga sin errores", guardada && problema == null, String.valueOf(problema));
+        if (guardada && problema == null) {
+            ConfiguracionSistema recargada = ArchivoConfiguracion.cargarEstricto(ruta);
+            r.verificar("recargada: 3 computadores, 1 buffer, 3 procesos, latencia 7", recargada.getComputadores().tamano() == 3
+                    && recargada.getBuffers().tamano() == 1 && recargada.getProcesos().tamano() == 3
+                    && recargada.getLatenciaRed() == 7, "");
+        }
+
+        NuevaConfiguracion.Resultado sinComputador = NuevaConfiguracion.construir(actual, 250, 7, computadores(2, 1024), true);
+        r.verificar("proceso en un computador que ya no existe: se rechaza con el motivo", !sinComputador.valido()
+                && sinComputador.motivo().contains("no existe") && sinComputador.motivo().contains("Consumidor"), String.valueOf(sinComputador.motivo()));
+        r.verificar("sin incluir carga, quitar computadores sí se permite", NuevaConfiguracion.construir(actual, 250, 7, computadores(2, 1024), false).valido(), "");
+
+        NuevaConfiguracion.Resultado bufferGrande = NuevaConfiguracion.construir(actual, 250, 7, computadores(3, 4), true);
+        r.verificar("buffer que no cabe en la RAM: se rechaza", !bufferGrande.valido() && bufferGrande.motivo().contains("no cabe")
+                && bufferGrande.motivo().contains("B1"), String.valueOf(bufferGrande.motivo()));
+        r.verificar("varios problemas: avisa cuántos más", !bufferGrande.valido() && bufferGrande.motivo().contains("más)"),
+                String.valueOf(bufferGrande.motivo()));
+        NuevaConfiguracion.Resultado procesoGrande = NuevaConfiguracion.construir(actual, 250, 7, computadores(3, 50), true);
+        r.verificar("proceso con más memoria que la RAM: se rechaza", !procesoGrande.valido() && procesoGrande.motivo().contains("pide 100"),
+                String.valueOf(procesoGrande.motivo()));
+        r.verificar("rechazo no devuelve configuración", procesoGrande.config() == null, "");
+
+        r.verificar("ciclo negativo", !NuevaConfiguracion.construir(actual, -1, 7, computadores(3, 1024), false).valido(), "");
+        r.verificar("latencia fuera de rango", !NuevaConfiguracion.construir(actual, 250, 100000, computadores(3, 1024), false).valido(), "");
+        r.verificar("un solo computador", !NuevaConfiguracion.construir(actual, 250, 7, computadores(1, 1024), false).valido(), "");
+        r.verificar("más del máximo de computadores", !NuevaConfiguracion.construir(actual, 250, 7, computadores(9, 1024), false).valido(), "");
+        r.verificar("RAM cero", !NuevaConfiguracion.construir(actual, 250, 7, computadores(3, 0), false).valido(), "");
+        ListaEnlazada<ConfigComputador> sinQuantum = computadores(2, 1024);
+        sinQuantum.agregarFinal(new ConfigComputador(1024, PoliticaTipo.ROUND_ROBIN, 0));
+        r.verificar("quantum cero", !NuevaConfiguracion.construir(actual, 250, 7, sinQuantum, false).valido(), "");
+    }
+
+    /** Configuración de partida con un buffer B1 (capacidad 5, Computador 1) y tres procesos que usan hasta el último computador. */
+    private static ConfiguracionSistema cargaActual(int cantidad) {
+        ListaEnlazada<DatosBuffer> buffers = new ListaEnlazada<>();
+        buffers.agregarFinal(new DatosBuffer("B1", 5, 1));
+        ListaEnlazada<DatosProceso> procesos = new ListaEnlazada<>();
+        procesos.agregarFinal(DatosProceso.cpuBound("Calculadora", 3, 100, 500, 50, 0));
+        procesos.agregarFinal(DatosProceso.productor("Sensor", 2, 50, 500, "B1", 3, 4, DatosProceso.ASIGNACION_AUTOMATICA));
+        procesos.agregarFinal(DatosProceso.consumidor("Consumidor", 2, 50, 500, "B1", 3, 4, cantidad - 1));
+        return new ConfiguracionSistema(true, 500, new CondicionesParada(0, false, 20, true, 40), 2, 15,
+                computadores(cantidad, 1024), buffers, procesos, 0);
+    }
+
+    private static ListaEnlazada<ConfigComputador> computadores(int cantidad, int ram) {
+        ListaEnlazada<ConfigComputador> lista = new ListaEnlazada<>();
+        for (int i = 0; i < cantidad; i++) {
+            lista.agregarFinal(new ConfigComputador(ram, PoliticaTipo.FCFS, 3));
+        }
+        return lista;
     }
 
     /** Motivo del rechazo, o null si el archivo se cargó bien. */
