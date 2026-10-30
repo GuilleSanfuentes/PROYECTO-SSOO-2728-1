@@ -87,6 +87,7 @@ public class PanelComputador extends JPanel {
         tablaListos.alHacerClic(this::abrirFicha);
         tablaBloqueados.alHacerClic(this::abrirFicha);
         tablaTerminados.alHacerClic(this::abrirFicha);
+        FiltroEntrada.soloDigitos(campoQuantum, String.valueOf(Planificador.QUANTUM_MAXIMO).length());
         botonQuantum.addActionListener(e -> aplicarQuantum());
         campoQuantum.addActionListener(e -> aplicarQuantum());
         setBorder(BorderFactory.createCompoundBorder(

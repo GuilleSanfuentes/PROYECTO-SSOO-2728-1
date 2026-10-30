@@ -26,10 +26,13 @@ public class DialogoProceso extends DialogoFormulario {
     private static final String AUTOMATICO = "Automático";
     private static final int FILAS_COMUNES = 6;
     private static final int FILAS_TIPO = 6;
+    private static final int PRIORIDAD_INICIAL = 5;
+    private static final int DIGITOS_VALOR = 7;
+    private static final int DIGITOS_DEADLINE = 9;
 
     private final JTextField nombre = new CampoTexto(12);
     private final JComboBox<TipoProceso> tipo = new JComboBox<>(TipoProceso.values());
-    private final JTextField prioridad = new CampoTexto(12);
+    private final JComboBox<Integer> prioridad = new JComboBox<>();
     private final JTextField memoria = new CampoTexto(12);
     private final JTextField deadline = new CampoTexto(12);
     private final JComboBox<String> computador = new JComboBox<>();
@@ -48,6 +51,25 @@ public class DialogoProceso extends DialogoFormulario {
         for (int i = 0; i < cluster.cantidadComputadores(); i++) {
             computador.addItem(cluster.getComputador(i).getNombre());
         }
+        for (int p = FabricaProcesos.PRIORIDAD_MAXIMA; p <= FabricaProcesos.PRIORIDAD_MINIMA; p++) {
+            prioridad.addItem(p);
+        }
+        prioridad.setSelectedItem(PRIORIDAD_INICIAL);
+        prioridad.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> lista, Object valor, int indice, boolean seleccionado,
+                    boolean enfoque) {
+                return super.getListCellRendererComponent(lista, textoPrioridad(valor), indice, seleccionado, enfoque);
+            }
+        });
+        FiltroEntrada.nombre(nombre);
+        FiltroEntrada.soloDigitos(memoria, DIGITOS_VALOR);
+        FiltroEntrada.soloDigitos(deadline, DIGITOS_DEADLINE);
+        FiltroEntrada.soloDigitos(instrucciones, DIGITOS_VALOR);
+        FiltroEntrada.soloDigitos(cadaCiclosES, DIGITOS_VALOR);
+        FiltroEntrada.soloDigitos(duracionES, DIGITOS_VALOR);
+        FiltroEntrada.soloDigitos(ciclosPorElemento, DIGITOS_VALOR);
+        FiltroEntrada.soloDigitos(elementos, DIGITOS_VALOR);
         tipo.setRenderer(new DefaultListCellRenderer() {
             @Override
             public Component getListCellRendererComponent(JList<?> lista, Object valor, int indice, boolean seleccionado,
@@ -80,6 +102,17 @@ public class DialogoProceso extends DialogoFormulario {
         });
     }
 
+    /** Texto del desplegable de prioridad: marca los extremos de la escala. */
+    private static Object textoPrioridad(Object valor) {
+        if (!(valor instanceof Integer p)) {
+            return valor;
+        }
+        if (p == FabricaProcesos.PRIORIDAD_MAXIMA) {
+            return p + "  (más importante)";
+        }
+        return p == FabricaProcesos.PRIORIDAD_MINIMA ? p + "  (menos importante)" : String.valueOf(p);
+    }
+
     /** Agrega una fila propia de un tipo, en la misma grilla y columnas que las comunes. */
     private void filaTipo(JPanel campos, int indice, String etiqueta, JComponent campo) {
         filasTipo[indice] = new JComponent[] {fila(campos, FILAS_COMUNES + indice, etiqueta, campo), campo};
@@ -104,7 +137,7 @@ public class DialogoProceso extends DialogoFormulario {
     @Override
     protected void limpiarCampos() {
         nombre.setText("");
-        prioridad.setText("");
+        prioridad.setSelectedItem(PRIORIDAD_INICIAL);
         memoria.setText("");
         deadline.setText("");
         instrucciones.setText("");
@@ -136,8 +169,7 @@ public class DialogoProceso extends DialogoFormulario {
             return;
         }
         TipoProceso elegido = (TipoProceso) tipo.getSelectedItem();
-        Validador.ResultadoEntero prio = Validador.entero(prioridad.getText(), "Prioridad",
-                FabricaProcesos.PRIORIDAD_MAXIMA, FabricaProcesos.PRIORIDAD_MINIMA);
+        int prio = (Integer) prioridad.getSelectedItem();
         Validador.ResultadoEntero mem = Validador.entero(memoria.getText(), "Memoria", 1, ConfiguracionSistema.MAX_RAM);
         Validador.ResultadoEntero dead = Validador.entero(deadline.getText(), "Deadline", 1, Integer.MAX_VALUE);
         Validador.ResultadoEntero instr = null;
@@ -148,16 +180,20 @@ public class DialogoProceso extends DialogoFormulario {
         Validador.ResultadoEntero[] revisar;
         if (elegido == TipoProceso.CPU_BOUND) {
             instr = Validador.entero(instrucciones.getText(), "Instrucciones", 1, MAX_VALOR);
-            revisar = new Validador.ResultadoEntero[] {prio, mem, dead, instr};
+            revisar = new Validador.ResultadoEntero[] {mem, dead, instr};
         } else if (elegido == TipoProceso.IO_BOUND) {
             instr = Validador.entero(instrucciones.getText(), "Instrucciones", 1, MAX_VALOR);
             cada = Validador.entero(cadaCiclosES.getText(), "E/S cada", 1, MAX_VALOR);
             dur = Validador.entero(duracionES.getText(), "Duración E/S", 1, MAX_VALOR);
-            revisar = new Validador.ResultadoEntero[] {prio, mem, dead, instr, cada, dur};
+            revisar = new Validador.ResultadoEntero[] {mem, dead, instr, cada, dur};
         } else {
             ciclos = Validador.entero(ciclosPorElemento.getText(), "Ciclos por elemento", 1, MAX_VALOR);
             elem = Validador.entero(elementos.getText(), "Elementos", 1, MAX_VALOR);
-            revisar = new Validador.ResultadoEntero[] {prio, mem, dead, ciclos, elem};
+            revisar = new Validador.ResultadoEntero[] {mem, dead, ciclos, elem};
+        }
+        if (nombre.getText().isBlank()) {
+            error("Nombre: escribe un nombre para el proceso");
+            return;
         }
         for (Validador.ResultadoEntero r : revisar) {
             if (!r.valido()) {
@@ -172,12 +208,12 @@ public class DialogoProceso extends DialogoFormulario {
         String nombreProceso = nombre.getText().trim();
         int destino = computador.getSelectedIndex() - 1;
         DatosProceso datos = switch (elegido) {
-            case CPU_BOUND -> DatosProceso.cpuBound(nombreProceso, prio.valor(), mem.valor(), dead.valor(), instr.valor(), destino);
-            case IO_BOUND -> DatosProceso.ioBound(nombreProceso, prio.valor(), mem.valor(), dead.valor(), instr.valor(),
+            case CPU_BOUND -> DatosProceso.cpuBound(nombreProceso, prio, mem.valor(), dead.valor(), instr.valor(), destino);
+            case IO_BOUND -> DatosProceso.ioBound(nombreProceso, prio, mem.valor(), dead.valor(), instr.valor(),
                     cada.valor(), dur.valor(), destino);
-            case PRODUCTOR -> DatosProceso.productor(nombreProceso, prio.valor(), mem.valor(), dead.valor(),
+            case PRODUCTOR -> DatosProceso.productor(nombreProceso, prio, mem.valor(), dead.valor(),
                     (String) buffer.getSelectedItem(), ciclos.valor(), elem.valor(), destino);
-            case CONSUMIDOR -> DatosProceso.consumidor(nombreProceso, prio.valor(), mem.valor(), dead.valor(),
+            case CONSUMIDOR -> DatosProceso.consumidor(nombreProceso, prio, mem.valor(), dead.valor(),
                     (String) buffer.getSelectedItem(), ciclos.valor(), elem.valor(), destino);
         };
         String motivo = cluster.validarProceso(datos);

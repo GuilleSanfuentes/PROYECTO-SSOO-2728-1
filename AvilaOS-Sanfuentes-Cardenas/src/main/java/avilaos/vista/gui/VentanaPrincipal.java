@@ -6,6 +6,7 @@ import avilaos.config.ConfiguracionSistema;
 import avilaos.hardware.ObservadorReloj;
 import avilaos.log.Debug;
 import avilaos.log.LogEventos;
+import avilaos.so.GeneradorIds;
 import avilaos.vista.ConsolaTerminal;
 import avilaos.vista.GraficoUtilizacion;
 import avilaos.vista.ReporteTerminal;
@@ -26,6 +27,7 @@ public class VentanaPrincipal extends JFrame implements ObservadorReloj {
     private static final int REFRESCO_ESTADO_MS = 200;
 
     private final Cluster cluster;
+    private final File archivo;
     private final PanelControl control;
     private final PanelComputador[] paneles;
     private final PanelInferior inferior = new PanelInferior();
@@ -35,10 +37,16 @@ public class VentanaPrincipal extends JFrame implements ObservadorReloj {
     private boolean resumenEmitido;
     private boolean cargando;
 
-    /** Arma la ventana sobre el clúster indicado, sin iniciar la simulación; la consola (opcional) sigue al clúster nuevo al cargar. */
+    /** Arma la ventana sobre el clúster armado con el archivo de configuración por defecto. */
     public VentanaPrincipal(Cluster cluster, ConsolaTerminal consola) {
-        super("ÁvilaOS");
+        this(cluster, consola, new File(ArchivoConfiguracion.RUTA_POR_DEFECTO));
+    }
+
+    /** Arma la ventana sobre el clúster indicado, sin iniciar la simulación; archivo es la configuración vigente para reiniciar. */
+    public VentanaPrincipal(Cluster cluster, ConsolaTerminal consola, File archivo) {
+        super("ÁvilaOS  -  " + archivo.getName());
         this.cluster = cluster;
+        this.archivo = archivo;
         this.consola = consola;
         this.control = new PanelControl(cluster);
         this.puente = new PuenteEDT<>(this::refrescar);
@@ -80,45 +88,80 @@ public class VentanaPrincipal extends JFrame implements ObservadorReloj {
     }
 
     /** Valida el archivo; si es correcto detiene este clúster y abre una ventana nueva con el clúster cargado, en pausa. */
-    public void cargarConfiguracion(File archivo) {
+    public void cargarConfiguracion(File nuevoArchivo) {
         if (cargando) {
             return;
         }
         ConfiguracionSistema nueva;
         try {
-            nueva = ArchivoConfiguracion.cargarEstricto(archivo.getPath());
+            nueva = ArchivoConfiguracion.cargarEstricto(nuevoArchivo.getPath());
         } catch (IllegalArgumentException e) {
             SelectorConfiguracion.error(this, "Cargar configuración",
-                    "No se cargó \"" + archivo.getName() + "\": " + e.getMessage() + "\n\nSigue la simulación actual.");
+                    "No se cargó \"" + nuevoArchivo.getName() + "\": " + e.getMessage() + "\n\nSigue la simulación actual.");
             return;
         }
+        detenerYReemplazar(nuevoArchivo, nueva, "Configuración cargada: " + nuevoArchivo.getName() + ". Pulsa Iniciar.", false, false);
+    }
+
+    /**
+     * Stop/reinicio: detiene la simulación, emite el resumen final y rearma todo desde el archivo de configuración vigente
+     * (releído, por si cambió). Si iniciarDespues es true, la simulación nueva arranca sola.
+     */
+    public void reiniciar(boolean iniciarDespues) {
+        if (cargando) {
+            return;
+        }
+        ConfiguracionSistema config;
+        String aviso;
+        boolean error = false;
+        try {
+            config = ArchivoConfiguracion.cargarEstricto(archivo.getPath());
+            aviso = iniciarDespues ? "Simulación reiniciada desde " + archivo.getName()
+                    : "Simulación detenida y reiniciada desde " + archivo.getName() + ". Pulsa Iniciar o carga otra configuración.";
+        } catch (IllegalArgumentException e) {
+            config = cluster.configuracionInicial();
+            aviso = "\"" + archivo.getName() + "\" ya no es válido (" + e.getMessage() + "); se reinició con la configuración anterior";
+            error = true;
+        }
+        detenerYReemplazar(archivo, config, aviso, error, iniciarDespues);
+    }
+
+    /** Detiene y apaga este clúster en otro hilo y luego lo reemplaza por uno nuevo en el hilo de Swing. */
+    private void detenerYReemplazar(File nuevoArchivo, ConfiguracionSistema config, String aviso, boolean esError,
+            boolean iniciarDespues) {
         cargando = true;
         Thread hilo = new Thread(() -> {
             cluster.detener();
             cluster.apagar();
-            SwingUtilities.invokeLater(() -> reemplazar(archivo, nueva));
-        }, "Hilo-Cargar-GUI");
+            SwingUtilities.invokeLater(() -> reemplazar(nuevoArchivo, config, aviso, esError, iniciarDespues));
+        }, "Hilo-Reinicio-GUI");
         hilo.setDaemon(true);
         hilo.start();
     }
 
-    private void reemplazar(File archivo, ConfiguracionSistema config) {
+    private void reemplazar(File nuevoArchivo, ConfiguracionSistema config, String aviso, boolean esError,
+            boolean iniciarDespues) {
         emitirResumenFinal();
         Debug.setActivo(config.isDebugger());
         LogEventos log = new LogEventos(LogEventos.CAPACIDAD_POR_DEFECTO);
         Debug.setLog(log);
-        ReporteTerminal.resumenConfiguracion(archivo.getPath(), config);
+        ReporteTerminal.resumenConfiguracion(nuevoArchivo.getPath(), config);
+        GeneradorIds.reiniciar();
         Cluster nuevo = new Cluster(config, log);
         nuevo.cargarProcesosIniciales();
         if (consola != null) {
             consola.reemplazarCluster(nuevo);
         }
-        VentanaPrincipal ventana = new VentanaPrincipal(nuevo, consola);
+        VentanaPrincipal ventana = new VentanaPrincipal(nuevo, consola, nuevoArchivo);
         ventana.setBounds(getBounds());
         ventana.setExtendedState(getExtendedState());
         ventana.mostrar();
+        ventana.control.avisar(aviso, esError);
         vigilante.stop();
         dispose();
+        if (iniciarDespues) {
+            nuevo.iniciar();
+        }
     }
 
     /** Muestra la ventana en el hilo de Swing, con el estado inicial ya dibujado. */

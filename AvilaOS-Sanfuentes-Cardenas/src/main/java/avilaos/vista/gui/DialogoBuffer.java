@@ -18,6 +18,9 @@ public class DialogoBuffer extends DialogoFormulario {
     /** Arma el formulario sobre el clúster indicado. */
     public DialogoBuffer(Window dueno, Cluster cluster) {
         super(dueno, cluster, "Crear buffer");
+        FiltroEntrada.identificador(nombre);
+        FiltroEntrada.soloDigitos(capacidad, String.valueOf(ConfiguracionSistema.MAX_CAPACIDAD_BUFFER).length());
+        nombre.setToolTipText("Letras, números, - y _ (sin espacios), hasta " + FiltroEntrada.LARGO_IDENTIFICADOR + " caracteres");
         for (int i = 0; i < cluster.cantidadComputadores(); i++) {
             anfitrion.addItem(cluster.getComputador(i).getNombre());
         }

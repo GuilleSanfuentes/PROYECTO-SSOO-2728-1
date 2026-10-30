@@ -55,9 +55,12 @@ public class PanelControl extends JPanel {
         casillaInactividad.addActionListener(e -> cluster.setApagadoInactividad(casillaInactividad.isSelected()));
         fila2.add(casillaInactividad);
         fila2.add(errorCampos);
+        FiltroEntrada.soloDigitos(campoDuracion, String.valueOf(Reloj.DURACION_MAXIMA_MS).length());
+        FiltroEntrada.soloDigitos(campoMaxCiclos, String.valueOf(Integer.MAX_VALUE).length() - 1);
         campoDuracion.addActionListener(e -> aplicarDuracion());
         campoMaxCiclos.addActionListener(e -> aplicarMaxCiclos());
-        botonIniciar.addActionListener(e -> cluster.iniciar());
+        botonIniciar.addActionListener(e -> iniciar());
+        botonStop.setToolTipText("Detiene la simulación y reinicia todo desde el archivo de configuración");
         botonPausa.addActionListener(e -> alternarPausa());
         botonStop.addActionListener(e -> detener());
         actualizarEstado();
@@ -76,8 +79,10 @@ public class PanelControl extends JPanel {
         boolean marcha = reloj.isEjecutando();
         boolean pausado = marcha && reloj.isPausado();
         boolean nuevo = !marcha && reloj.getCiclo() == 0;
-        etiquetaEstado.setText("Estado: " + (nuevo ? "listo para iniciar" : !marcha ? "detenida" : pausado ? "en pausa" : "en marcha"));
-        botonIniciar.setEnabled(nuevo);
+        etiquetaEstado.setText("Estado: " + (nuevo ? "listo para iniciar"
+                : !marcha ? "terminada (Iniciar vuelve a empezar)" : pausado ? "en pausa" : "en marcha"));
+        botonIniciar.setEnabled(!marcha);
+        botonIniciar.setToolTipText(nuevo ? "Inicia la simulación" : "Reinicia todo desde el archivo de configuración y vuelve a correr");
         botonPausa.setEnabled(marcha);
         botonPausa.setText(pausado ? "Seguir" : "Pausar");
         botonStop.setEnabled(marcha);
@@ -192,13 +197,32 @@ public class PanelControl extends JPanel {
         actualizarEstado();
     }
 
+    /** Muestra un aviso breve en la barra (verde si es confirmación, rojo si es error). */
+    public void avisar(String texto, boolean esError) {
+        if (esError) {
+            errorCampos.error(texto);
+        } else {
+            errorCampos.exito(texto);
+        }
+    }
+
+    /** Inicia la simulación; si ya corrió y terminó, reinicia todo y la vuelve a correr. */
+    private void iniciar() {
+        if (cluster.getReloj().getCiclo() == 0) {
+            cluster.iniciar();
+            actualizarEstado();
+        } else if (SwingUtilities.getWindowAncestor(this) instanceof VentanaPrincipal ventana) {
+            botonIniciar.setEnabled(false);
+            ventana.reiniciar(true);
+        }
+    }
+
+    /** Stop: detiene la simulación y reinicia todos los datos, listo para Iniciar o cargar otra configuración. */
     private void detener() {
         botonStop.setEnabled(false);
-        Thread hilo = new Thread(() -> {
-            cluster.detener();
-            javax.swing.SwingUtilities.invokeLater(this::actualizarEstado);
-        }, "Hilo-Stop-GUI");
-        hilo.setDaemon(true);
-        hilo.start();
+        botonPausa.setEnabled(false);
+        if (SwingUtilities.getWindowAncestor(this) instanceof VentanaPrincipal ventana) {
+            ventana.reiniciar(false);
+        }
     }
 }

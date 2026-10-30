@@ -26,7 +26,9 @@ import avilaos.vista.gui.ModeloTablaTexto;
 import avilaos.vista.gui.PanelGrafico;
 import avilaos.vista.gui.PanelMetricas;
 import avilaos.vista.gui.Validador;
+import avilaos.vista.gui.FiltroEntrada;
 import java.io.File;
+import javax.swing.JTextField;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -68,6 +70,7 @@ public final class PruebasPaso9 {
         }
         probarValidador();
         probarModelosDeTabla();
+        probarEntradasRestringidas();
         probarCargaEstricta();
         probarFotoYPaneles(log);
         probarNuevaConfiguracion();
@@ -99,6 +102,30 @@ public final class PruebasPaso9 {
         r.verificar("el motivo nombra el campo", motivo("x", "Quantum:"), Validador.entero("x", "Quantum", 1, 100).motivo());
         r.verificar("fuera de int pero dentro de long -> fuera del rango", motivo("3000000000", "fuera del rango"),
                 Validador.entero("3000000000", "X", 0, Integer.MAX_VALUE).motivo());
+    }
+
+    /** Los campos solo aceptan los caracteres válidos y hasta su largo máximo, también al pegar texto. */
+    private static void probarEntradasRestringidas() {
+        r.grupo("Entradas restringidas (solo se puede escribir lo válido)");
+        JTextField numero = new JTextField();
+        FiltroEntrada.soloDigitos(numero, 3);
+        numero.setText("1a2-3");
+        r.verificar("campo numérico descarta letras y signos: '1a2-3' -> '123'", "123".equals(numero.getText()), numero.getText());
+        numero.setText("98765");
+        r.verificar("campo numérico respeta el máximo de 3 cifras", "987".equals(numero.getText()), numero.getText());
+        numero.setText("-5");
+        r.verificar("no se pueden escribir negativos", "5".equals(numero.getText()), numero.getText());
+        JTextField nombre = new JTextField();
+        FiltroEntrada.nombre(nombre);
+        nombre.setText("Calc 1!@#$");
+        r.verificar("nombre de proceso: letras, números y espacios", "Calc 1".equals(nombre.getText()), nombre.getText());
+        nombre.setText("x".repeat(40));
+        r.verificar("nombre de proceso: máximo " + FiltroEntrada.LARGO_NOMBRE + " caracteres",
+                nombre.getText().length() == FiltroEntrada.LARGO_NOMBRE, String.valueOf(nombre.getText().length()));
+        JTextField buffer = new JTextField();
+        FiltroEntrada.identificador(buffer);
+        buffer.setText("B 1#");
+        r.verificar("nombre de buffer: sin espacios ni símbolos ('B 1#' -> 'B1')", "B1".equals(buffer.getText()), buffer.getText());
     }
 
     /** Los modelos de tabla informan filas, columnas y valores, y avisan a la tabla cuando cambian. */

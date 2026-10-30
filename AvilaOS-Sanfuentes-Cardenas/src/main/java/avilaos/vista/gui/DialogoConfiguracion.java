@@ -43,9 +43,15 @@ public class DialogoConfiguracion extends DialogoFormulario {
         fila(campos, 0, "Ciclo (ms):", duracion);
         fila(campos, 1, "Latencia de red (ciclos):", latencia);
         fila(campos, 2, "Número de computadores:", cantidad);
+        FiltroEntrada.soloDigitos(duracion, String.valueOf(Reloj.DURACION_MAXIMA_MS).length());
+        FiltroEntrada.soloDigitos(latencia, String.valueOf(ConfiguracionSistema.MAX_LATENCIA).length());
+        FiltroEntrada.soloDigitos(cantidad, 1);
+        cantidad.setToolTipText("De " + ConfiguracionSistema.MIN_COMPUTADORES + " a " + ConfiguracionSistema.MAX_COMPUTADORES);
         for (int i = 0; i < filas.length; i++) {
             ram[i] = new CampoTexto(6);
             quantum[i] = new CampoTexto(3);
+            FiltroEntrada.soloDigitos(ram[i], String.valueOf(ConfiguracionSistema.MAX_RAM).length());
+            FiltroEntrada.soloDigitos(quantum[i], String.valueOf(ConfiguracionSistema.MAX_QUANTUM).length());
             politica[i].setRenderer(new DefaultListCellRenderer() {
                 @Override
                 public Component getListCellRendererComponent(JList<?> lista, Object valor, int indice,
