@@ -7,9 +7,10 @@ public class ModeloTablaBuffers extends AbstractTableModel {
 
     static final int COL_ELEMENTOS = 2;
     static final int COL_PRIMER_BLOQUEO = 8;
+    static final int COL_USADO_POR = 11;
 
     private static final String[] COLUMNAS = {"Buffer", "Anfitrión", "Elementos", "Vacío", "Lleno", "Mutex",
-        "Producidos", "Consumidos", "Bloq. en vacío", "Bloq. en lleno", "Bloq. en mutex"};
+        "Producidos", "Consumidos", "Bloq. en vacío", "Bloq. en lleno", "Bloq. en mutex", "Usado por"};
 
     private FilaBuffer[] filas = new FilaBuffer[0];
 
@@ -53,7 +54,8 @@ public class ModeloTablaBuffers extends AbstractTableModel {
             case 7 -> String.valueOf(f.consumidos());
             case 8 -> f.bloqueadosVacio();
             case 9 -> f.bloqueadosLleno();
-            default -> f.bloqueadosMutex();
+            case 10 -> f.bloqueadosMutex();
+            default -> f.usadoPor();
         };
     }
 }

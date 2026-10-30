@@ -167,10 +167,12 @@ public final class PruebasPaso9 {
                 && copia.elementosObjetivo() == 10 && copia.elementosProcesados() == 0, copia.toString());
         r.verificar("fila(0) devuelve el mismo registro", conMotivo.fila(0) == fila, "");
 
-        FilaBuffer buffer = new FilaBuffer("B1", 1, 2, 5, 3, 2, 1, 9, 7, "-", "P4-H1", "-");
+        FilaBuffer buffer = new FilaBuffer("B1", 1, 2, 5, 3, 2, 1, 9, 7, "-", "P4-H1", "-", "P4-H1 Monitor (PC0, remoto)");
         ModeloTablaBuffers modeloBuffers = new ModeloTablaBuffers();
-        r.verificar("buffers: 11 columnas", modeloBuffers.getColumnCount() == 11, String.valueOf(modeloBuffers.getColumnCount()));
+        r.verificar("buffers: 12 columnas", modeloBuffers.getColumnCount() == 12, String.valueOf(modeloBuffers.getColumnCount()));
         modeloBuffers.setFilas(new FilaBuffer[]{buffer});
+        r.verificar("buffers: columna 'Usado por' con computador y acceso", "P4-H1 Monitor (PC0, remoto)".equals(modeloBuffers.getValueAt(0, 11)),
+                String.valueOf(modeloBuffers.getValueAt(0, 11)));
         r.verificar("buffers: nombre y anfitrión", "B1".equals(modeloBuffers.getValueAt(0, 0))
                 && "Computador 1".equals(modeloBuffers.getValueAt(0, 1)),
                 modeloBuffers.getValueAt(0, 0) + " / " + modeloBuffers.getValueAt(0, 1));
