@@ -35,11 +35,17 @@ public class ConsolaTerminal implements ObservadorReloj {
                guardar [ruta]                 guarda la configuración actual (config/avilaosconfigs.json)
                ayuda                         muestra esta lista""";
 
-    private final Cluster cluster;
+    private volatile Cluster cluster;
 
     /** Crea la consola sobre el clúster indicado. */
     public ConsolaTerminal(Cluster cluster) {
         this.cluster = cluster;
+    }
+
+    /** Pasa la consola a un clúster nuevo (al cargar otra configuración desde la GUI). */
+    public void reemplazarCluster(Cluster nuevo) {
+        this.cluster = nuevo;
+        nuevo.agregarObservador(this);
     }
 
     /** Se registra como observador del clúster y arranca el hilo que lee comandos. */

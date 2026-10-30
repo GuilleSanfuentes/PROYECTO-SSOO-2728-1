@@ -10,10 +10,11 @@ import avilaos.config.ConfiguracionSistema;
 import avilaos.log.Debug;
 import avilaos.log.LogEventos;
 import avilaos.vista.ConsolaTerminal;
-import avilaos.vista.GraficoUtilizacion;
 import avilaos.vista.ReporteTerminal;
+import avilaos.vista.gui.VentanaPrincipal;
 
 /**
+ * Punto de entrada de la simulación: arma el clúster desde el JSON y abre la ventana en pausa, esperando Iniciar.
  *
  * @author guill
  */
@@ -28,11 +29,8 @@ public class AvilaOSSanfuentesCardenas {
 
         Cluster cluster = new Cluster(config, log);
         cluster.cargarProcesosIniciales();
-        new ConsolaTerminal(cluster).iniciar();
-        cluster.iniciar();
-        cluster.esperarFin(0);
-        ReporteTerminal.resumenFinal(cluster);
-        GraficoUtilizacion.exportarPNG(cluster.getUtilizacion(), GraficoUtilizacion.RUTA_POR_DEFECTO);
-        cluster.apagar();
+        ConsolaTerminal consola = new ConsolaTerminal(cluster);
+        consola.iniciar();
+        new VentanaPrincipal(cluster, consola).mostrar();
     }
 }

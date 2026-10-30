@@ -40,12 +40,25 @@ public final class GraficoUtilizacion {
             }
             datos.addSeries(serie);
         }
+        return armar(datos);
+    }
+
+    /** Arma el gráfico con una serie vacía por nombre, para ir llenándolo en vivo desde la GUI. */
+    public static JFreeChart crearVacio(String[] nombres) {
+        XYSeriesCollection datos = new XYSeriesCollection();
+        for (String nombre : nombres) {
+            datos.addSeries(new XYSeries(nombre));
+        }
+        return armar(datos);
+    }
+
+    private static JFreeChart armar(XYSeriesCollection datos) {
         JFreeChart grafico = ChartFactory.createXYLineChart(
                 "Utilización de CPU por computador (ventana de " + RegistroUtilizacion.VENTANA + " ciclos)",
                 "Ciclo de reloj", "CPU ocupada (%)", datos, PlotOrientation.VERTICAL, true, true, false);
         XYPlot plot = grafico.getXYPlot();
         plot.getRangeAxis().setRange(-5, 105);
-        for (int i = 0; i < registro.cantidadSeries(); i++) {
+        for (int i = 0; i < datos.getSeriesCount(); i++) {
             plot.getRenderer().setSeriesStroke(i, new BasicStroke(Math.max(1.5f, 3.5f - i)));
         }
         plot.getDomainAxis().setStandardTickUnits(NumberAxis.createIntegerTickUnits());
@@ -61,13 +74,27 @@ public final class GraficoUtilizacion {
             Debug.error(ORIGEN, "no se pudo crear la carpeta " + carpeta);
             return false;
         }
-        try {
-            ChartUtils.saveChartAsPNG(archivo, crear(registro), ANCHO_PNG, ALTO_PNG);
-        } catch (IOException e) {
-            Debug.error(ORIGEN, "no se pudo guardar " + ruta + ": " + e.getMessage());
+        return guardar(crear(registro), archivo);
+    }
+
+    /** Guarda como PNG el gráfico indicado (por ejemplo el que muestra la ventana). Devuelve false si falla. */
+    public static boolean exportarPNG(JFreeChart grafico, File archivo) {
+        File carpeta = archivo.getAbsoluteFile().getParentFile();
+        if (carpeta != null && !carpeta.isDirectory() && !carpeta.mkdirs()) {
+            Debug.error(ORIGEN, "no se pudo crear la carpeta " + carpeta);
             return false;
         }
-        Debug.ok(ORIGEN, "gráfico de utilización guardado en " + ruta);
+        return guardar(grafico, archivo);
+    }
+
+    private static boolean guardar(JFreeChart grafico, File archivo) {
+        try {
+            ChartUtils.saveChartAsPNG(archivo, grafico, ANCHO_PNG, ALTO_PNG);
+        } catch (IOException e) {
+            Debug.error(ORIGEN, "no se pudo guardar " + archivo + ": " + e.getMessage());
+            return false;
+        }
+        Debug.ok(ORIGEN, "gráfico de utilización guardado en " + archivo);
         return true;
     }
 }
