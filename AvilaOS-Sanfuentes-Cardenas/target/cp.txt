@@ -1,1 +1,0 @@
-C:\Users\guill\.m2\repository\com\google\code\gson\gson\2.13.1\gson-2.13.1.jar;C:\Users\guill\.m2\repository\com\google\errorprone\error_prone_annotations\2.38.0\error_prone_annotations-2.38.0.jar;C:\Users\guill\.m2\repository\org\jfree\jfreechart\1.5.5\jfreechart-1.5.5.jar
