@@ -19,6 +19,7 @@ public class CampoEditable extends JTextField {
     public CampoEditable(int columnas) {
         super(columnas);
         colorNormal = getBackground();
+        SeleccionAlEnfocar.instalar(this);
         getDocument().addDocumentListener(new DocumentListener() {
             @Override
             public void insertUpdate(DocumentEvent e) {
