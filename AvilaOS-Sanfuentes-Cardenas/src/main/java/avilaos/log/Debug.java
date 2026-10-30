@@ -1,6 +1,7 @@
 package avilaos.log;
 
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicLong;
 
 /** Salida de depuración por terminal. Solo imprime si el debugger está activo. */
 public final class Debug {
@@ -12,6 +13,7 @@ public final class Debug {
     private static volatile long ciclo = 0;
     private static volatile LogEventos log = null;
     private static final ConsolaDebug consola = new ConsolaDebug(1000);
+    private static final AtomicLong errores = new AtomicLong();
 
     private Debug() {
     }
@@ -36,6 +38,11 @@ public final class Debug {
         log = valor;
     }
 
+    /** Cantidad de ERROR emitidos desde que arrancó el programa (se cuentan aunque el debugger esté apagado). */
+    public static long getErrores() {
+        return errores.get();
+    }
+
     /** Copia de la salida del Debug que lee la interfaz. */
     public static ConsolaDebug getConsola() {
         return consola;
@@ -57,6 +64,7 @@ public final class Debug {
 
     /** Mensaje de error con la ubicación en el código y los últimos eventos del log. */
     public static void error(String origen, String mensaje) {
+        errores.incrementAndGet();
         if (!activo) {
             return;
         }
