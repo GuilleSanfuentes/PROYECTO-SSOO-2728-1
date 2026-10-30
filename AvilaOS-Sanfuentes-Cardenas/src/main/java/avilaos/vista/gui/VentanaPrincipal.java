@@ -11,7 +11,15 @@ import avilaos.vista.ConsolaTerminal;
 import avilaos.vista.GraficoUtilizacion;
 import avilaos.vista.ReporteTerminal;
 import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Cursor;
 import java.awt.Dimension;
+import java.awt.Graphics;
+import java.awt.Window;
+import java.awt.event.KeyAdapter;
+import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import javax.swing.JComponent;
 import java.io.File;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
@@ -36,6 +44,7 @@ public class VentanaPrincipal extends JFrame implements ObservadorReloj {
     private final Timer vigilante;
     private boolean resumenEmitido;
     private boolean cargando;
+    private boolean finalizado;
 
     /** Arma la ventana sobre el clúster armado con el archivo de configuración por defecto. */
     public VentanaPrincipal(Cluster cluster, ConsolaTerminal consola) {
@@ -188,6 +197,14 @@ public class VentanaPrincipal extends JFrame implements ObservadorReloj {
 
     /** Si el reloj se detuvo tras correr, dibuja el último estado y emite el resumen final una sola vez. */
     private void vigilarEstado() {
+        if (finalizado) {
+            return;
+        }
+        if (!cargando && cluster.getReloj().getCiclo() > 0 && !cluster.todosLosProcesos().estaVacia()
+                && cluster.todosTerminados()) {
+            finalizar();
+            return;
+        }
         control.actualizarEstado();
         if (!cluster.getReloj().isEjecutando() && cluster.getReloj().getCiclo() > 0 && !resumenEmitido) {
             refrescar(FotoCluster.de(cluster));
@@ -203,6 +220,74 @@ public class VentanaPrincipal extends JFrame implements ObservadorReloj {
         resumenEmitido = true;
         ReporteTerminal.resumenFinal(cluster);
         GraficoUtilizacion.exportarPNG(cluster.getUtilizacion(), GraficoUtilizacion.RUTA_POR_DEFECTO);
+    }
+
+    /** Todos los procesos terminaron: apaga la simulación, cierra las demás ventanas, bloquea esta y muestra la despedida. */
+    private void finalizar() {
+        finalizado = true;
+        vigilante.stop();
+        Thread hilo = new Thread(() -> {
+            cluster.detener();
+            cluster.apagar();
+            SwingUtilities.invokeLater(() -> {
+                refrescar(FotoCluster.de(cluster));
+                control.bloquearTodo();
+                emitirResumenFinal();
+                for (Window otra : Window.getWindows()) {
+                    if (otra != this && otra.isDisplayable()) {
+                        otra.dispose();
+                    }
+                }
+                Bloqueo bloqueo = new Bloqueo();
+                setGlassPane(bloqueo);
+                bloqueo.setVisible(true);
+                bloqueo.requestFocusInWindow();
+                DialogoDespedida.mostrar(this, this::salir);
+            });
+        }, "Hilo-Fin-GUI");
+        hilo.setDaemon(true);
+        hilo.start();
+    }
+
+    /** Termina el programa: cierra todas las ventanas y finaliza el proceso. */
+    private void salir() {
+        for (Window ventana : Window.getWindows()) {
+            ventana.dispose();
+        }
+        System.exit(0);
+    }
+
+    /** Capa semitransparente sobre la ventana que se traga ratón y teclado: la interfaz queda visible pero bloqueada. */
+    private static final class Bloqueo extends JComponent {
+
+        Bloqueo() {
+            setOpaque(false);
+            setFocusable(true);
+            setFocusTraversalKeysEnabled(false);
+            MouseAdapter tragar = new MouseAdapter() {
+            };
+            addMouseListener(tragar);
+            addMouseMotionListener(tragar);
+            addMouseWheelListener(tragar);
+            addKeyListener(new KeyAdapter() {
+                @Override
+                public void keyPressed(KeyEvent e) {
+                    e.consume();
+                }
+
+                @Override
+                public void keyTyped(KeyEvent e) {
+                    e.consume();
+                }
+            });
+            setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            g.setColor(new Color(33, 37, 41, 120));
+            g.fillRect(0, 0, getWidth(), getHeight());
+        }
     }
 
     private void cerrar() {

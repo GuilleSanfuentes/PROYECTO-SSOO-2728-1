@@ -79,8 +79,8 @@ public class PanelControl extends JPanel {
         boolean marcha = reloj.isEjecutando();
         boolean pausado = marcha && reloj.isPausado();
         boolean nuevo = !marcha && reloj.getCiclo() == 0;
-        etiquetaEstado.setText("Estado: " + (nuevo ? "listo para iniciar"
-                : !marcha ? "terminada (Iniciar vuelve a empezar)" : pausado ? "en pausa" : "en marcha"));
+        etiquetaEstado.setText("Estado: " + (nuevo ? "listo para iniciar" : !marcha ? "terminada" : pausado ? "en pausa" : "en marcha"));
+        etiquetaEstado.setToolTipText(!marcha && !nuevo ? "Iniciar vuelve a empezar desde el archivo de configuración" : null);
         botonIniciar.setEnabled(!marcha);
         botonIniciar.setToolTipText(nuevo ? "Inicia la simulación" : "Reinicia todo desde el archivo de configuración y vuelve a correr");
         botonPausa.setEnabled(marcha);
@@ -195,6 +195,23 @@ public class PanelControl extends JPanel {
             cluster.pausar();
         }
         actualizarEstado();
+    }
+
+    /** Fin de la simulación: muestra el estado final y desactiva todos los botones y campos de la barra. */
+    public void bloquearTodo() {
+        etiquetaEstado.setText("Estado: procesos finalizados");
+        etiquetaEstado.setToolTipText(null);
+        desactivar(this);
+    }
+
+    private static void desactivar(java.awt.Container contenedor) {
+        for (java.awt.Component hijo : contenedor.getComponents()) {
+            if (hijo instanceof javax.swing.AbstractButton || hijo instanceof javax.swing.text.JTextComponent) {
+                hijo.setEnabled(false);
+            } else if (hijo instanceof java.awt.Container interno) {
+                desactivar(interno);
+            }
+        }
     }
 
     /** Muestra un aviso breve en la barra (verde si es confirmación, rojo si es error). */
