@@ -12,7 +12,15 @@ public final class AvanceProyecto {
         "Clúster y red (acceso remoto)",
         "Métricas y gráfico de CPU",
         "Carga y guardado de simulaciones",
-        "GUI"
+        "GUI",
+        "Disco SD y asignación encadenada",
+        "Planificador de disco",
+        "Sistema de archivos y permisos",
+        "Un computador y JSON del Proyecto 2",
+        "Procesos de E/S de archivos",
+        "Siete estados y swap",
+        "Métricas y gráfico del disco",
+        "GUI del disco y archivos"
     };
 
     private static final int[] ETAPA = {
@@ -24,7 +32,15 @@ public final class AvanceProyecto {
         6,
         7,
         8,
-        9
+        9,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18
     };
 
     private AvanceProyecto() {
