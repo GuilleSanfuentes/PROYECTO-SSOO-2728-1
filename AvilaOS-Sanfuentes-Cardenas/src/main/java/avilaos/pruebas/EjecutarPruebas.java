@@ -25,5 +25,6 @@ public final class EjecutarPruebas {
         PruebasPaso8.ejecutar(log);
         PruebasPaso9.ejecutar(log);
         PruebasPaso10.ejecutar(log);
+        PruebasPaso11.ejecutar(log);
     }
 }
