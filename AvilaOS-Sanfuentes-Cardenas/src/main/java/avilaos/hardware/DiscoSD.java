@@ -25,7 +25,12 @@ public class DiscoSD implements ComponenteReloj {
     private int objetivo = SIN_OBJETIVO;
     private long desplazamiento;
     private long ciclosMoviendo;
+    private long ciclosTransfiriendo;
+    private long ciclosOciosos;
     private long saltos;
+    private int accionesEnCiclo;
+    private String ultimaAccion = "ninguna";
+    private volatile ControladorDisco controlador;
 
     /** Crea el disco; los valores fuera de rango se reemplazan por los de por defecto con ERROR. */
     public DiscoSD(String nombre, int bloquesArchivos, int bloquesSwap, int cabezalInicial, int velocidad) {
@@ -222,48 +227,119 @@ public class DiscoSD implements ComponenteReloj {
             Debug.error(nombre, "salto del cabezal a una posición inexistente " + posicion);
             return false;
         }
+        int desde;
         mutex.acquireUninterruptibly();
         try {
+            desde = cabezal;
             cabezal = posicion;
             if (objetivo == posicion) {
                 objetivo = SIN_OBJETIVO;
             }
             saltos++;
+            registrarAccion("salta de " + desde + " a " + posicion);
         } finally {
             mutex.release();
         }
-        Debug.info(nombre, "el cabezal salta a " + posicion + " (no cuenta como desplazamiento)");
+        Debug.info(nombre, "el cabezal salta de " + desde + " a " + posicion + " (no cuenta como desplazamiento)");
         return true;
     }
 
-    /** Mueve el cabezal hacia su objetivo, como máximo la velocidad configurada. */
+    /** Un ciclo de trabajo: el controlador ordena una sola acción; sin controlador, el cabezal sigue su objetivo. */
     @Override
     public void tick(long ciclo) {
-        int movido;
+        ControladorDisco actual = controlador;
+        if (actual == null) {
+            int destino = getObjetivo();
+            if (destino != SIN_OBJETIVO && destino != getCabezal()) {
+                moverHacia(destino);
+            }
+            return;
+        }
+        mutex.acquireUninterruptibly();
+        try {
+            accionesEnCiclo = 0;
+        } finally {
+            mutex.release();
+        }
+        actual.ejecutarCicloDisco(this, ciclo);
+        int acciones;
+        mutex.acquireUninterruptibly();
+        try {
+            acciones = accionesEnCiclo;
+        } finally {
+            mutex.release();
+        }
+        if (acciones == 0) {
+            Debug.error(nombre, "el controlador no indicó ninguna acción en el ciclo " + ciclo + ", se cuenta como ocioso");
+            ocioso();
+        } else if (acciones > 1) {
+            Debug.error(nombre, acciones + " acciones en el ciclo " + ciclo + "; el disco hace solo una por ciclo");
+        }
+    }
+
+    /** Un ciclo de movimiento hacia el destino: avanza como máximo la velocidad. Devuelve false si no hay a dónde ir. */
+    public boolean moverHacia(int destino) {
+        if (!esPosicionValida(destino)) {
+            Debug.error(nombre, "el cabezal no puede ir a " + destino + " (0.." + (bloques.length - 1) + ")");
+            return false;
+        }
         int posicion;
         boolean llego;
         mutex.acquireUninterruptibly();
         try {
-            if (objetivo == SIN_OBJETIVO || objetivo == cabezal) {
-                return;
+            if (destino == cabezal) {
+                return false;
             }
-            int distancia = Math.abs(objetivo - cabezal);
-            movido = Math.min(velocidad, distancia);
-            direccion = objetivo > cabezal ? DireccionCabezal.SUBIENDO : DireccionCabezal.BAJANDO;
+            int movido = Math.min(velocidad, Math.abs(destino - cabezal));
+            direccion = destino > cabezal ? DireccionCabezal.SUBIENDO : DireccionCabezal.BAJANDO;
             cabezal += movido * direccion.getPaso();
             desplazamiento += movido;
             ciclosMoviendo++;
             posicion = cabezal;
-            llego = cabezal == objetivo;
-            if (llego) {
+            llego = cabezal == destino;
+            if (llego && objetivo == destino) {
                 objetivo = SIN_OBJETIVO;
             }
+            registrarAccion("mueve el cabezal a " + cabezal + " " + direccion.getSimbolo());
         } finally {
             mutex.release();
         }
         if (llego) {
             Debug.ok(nombre, "el cabezal llega al bloque " + posicion + " (desplazamiento total " + getDesplazamientoTotal() + ")");
         }
+        return true;
+    }
+
+    /** Lee o escribe el bloque que está bajo el cabezal: cuesta un ciclo. Devuelve false si el cabezal no está ahí. */
+    public boolean transferir(int numero, String operacion) {
+        mutex.acquireUninterruptibly();
+        try {
+            if (numero != cabezal) {
+                Debug.error(nombre, "no se puede " + operacion + " el bloque " + numero + ": el cabezal está en " + cabezal);
+                return false;
+            }
+            ciclosTransfiriendo++;
+            registrarAccion(operacion + " el bloque " + numero);
+            return true;
+        } finally {
+            mutex.release();
+        }
+    }
+
+    /** Ciclo sin trabajo. */
+    public void ocioso() {
+        mutex.acquireUninterruptibly();
+        try {
+            ciclosOciosos++;
+            registrarAccion("ocioso");
+        } finally {
+            mutex.release();
+        }
+    }
+
+    /** Asocia el controlador (planificador de disco) que decide cada ciclo; null lo desconecta. */
+    public void setControlador(ControladorDisco nuevo) {
+        controlador = nuevo;
     }
 
     /** Cambia la velocidad del cabezal (posiciones por ciclo). Devuelve false con ERROR si no está en 1..1000. */
@@ -397,6 +473,42 @@ public class DiscoSD implements ComponenteReloj {
         } finally {
             mutex.release();
         }
+    }
+
+    /** Ciclos en que se leyó o escribió un bloque. */
+    public long getCiclosTransfiriendo() {
+        mutex.acquireUninterruptibly();
+        try {
+            return ciclosTransfiriendo;
+        } finally {
+            mutex.release();
+        }
+    }
+
+    /** Ciclos sin trabajo. */
+    public long getCiclosOciosos() {
+        mutex.acquireUninterruptibly();
+        try {
+            return ciclosOciosos;
+        } finally {
+            mutex.release();
+        }
+    }
+
+    /** Lo que hizo el disco en su último ciclo (para la interfaz). */
+    public String getUltimaAccion() {
+        mutex.acquireUninterruptibly();
+        try {
+            return ultimaAccion;
+        } finally {
+            mutex.release();
+        }
+    }
+
+    /** Cuenta la acción del ciclo (llamar con el mutex tomado). */
+    private void registrarAccion(String descripcion) {
+        accionesEnCiclo++;
+        ultimaAccion = descripcion;
     }
 
     /** Reporta la integridad rota y devuelve false. */
