@@ -34,6 +34,37 @@ public class AsignadorBloques {
         return asignarEnZona(dueno, cantidad, false, primerBloque);
     }
 
+    /** Asigna exactamente los bloques indicados, en ese orden (recargar una cadena guardada). Devuelve el primero o -1. */
+    public int asignarExacta(String dueno, int[] cadena) {
+        if (dueno == null || dueno.isBlank() || cadena == null || cadena.length == 0) {
+            Debug.error(nombre, "cadena exacta inválida para " + dueno);
+            return Bloque.FIN;
+        }
+        mutex.acquireUninterruptibly();
+        try {
+            for (int i = 0; i < cadena.length; i++) {
+                int b = cadena[i];
+                if (!disco.esPosicionValida(b) || disco.esSwap(b) || disco.leer(b).isOcupado()) {
+                    Debug.info(nombre, "la cadena de " + dueno + " no se puede rearmar: el bloque " + b + " no está libre en la zona de archivos");
+                    return Bloque.FIN;
+                }
+                for (int j = 0; j < i; j++) {
+                    if (cadena[j] == b) {
+                        Debug.info(nombre, "la cadena de " + dueno + " repite el bloque " + b);
+                        return Bloque.FIN;
+                    }
+                }
+            }
+            for (int i = 0; i < cadena.length; i++) {
+                disco.escribir(cadena[i], dueno, i + 1 < cadena.length ? cadena[i + 1] : Bloque.FIN);
+            }
+            Debug.ok(nombre, dueno + " recupera su cadena de " + cadena.length + " bloques desde el " + cadena[0]);
+            return cadena[0];
+        } finally {
+            mutex.release();
+        }
+    }
+
     /** Reserva en el área de intercambio una cadena para un proceso suspendido. Devuelve el primer bloque o -1. */
     public int asignarSwap(String dueno, int cantidad) {
         return asignarEnZona(dueno, cantidad, true, Bloque.FIN);

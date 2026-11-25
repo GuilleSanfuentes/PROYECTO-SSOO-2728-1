@@ -506,7 +506,10 @@ public final class ArchivoConfiguracion {
         }
 
         private void claves(JsonObject obj, String[] permitidas, String contexto) {
-            for (String clave : obj.keySet()) {
+            Nodo<String> nodo = ClavesJson.de(obj).getCabeza();
+            while (nodo != null) {
+                String clave = nodo.getDato();
+                nodo = nodo.getSiguiente();
                 if (clave.startsWith("_")) {
                     continue;
                 }
