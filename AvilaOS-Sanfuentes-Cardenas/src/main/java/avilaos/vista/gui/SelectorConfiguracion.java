@@ -44,6 +44,27 @@ final class SelectorConfiguracion {
         return null;
     }
 
+    /** Pide un JSON a cargar con el título indicado (sistema de archivos o procesos); null si se cancela. */
+    static File elegirJSON(Component padre, String titulo) {
+        JFileChooser selector = nuevoSelector(carpetaConfig(), "Archivo JSON (*.json)", "json");
+        selector.setDialogTitle(titulo);
+        if (selector.showOpenDialog(padre) == JFileChooser.APPROVE_OPTION) {
+            return selector.getSelectedFile();
+        }
+        return null;
+    }
+
+    /** Pide dónde guardar el sistema de archivos (sugiere un nombre libre y confirma si sobrescribe); null si se cancela. */
+    static File elegirParaGuardarSistemaArchivos(Component padre) {
+        File carpeta = carpetaConfig();
+        int n = 1;
+        while (new File(carpeta, "sistema_archivos_" + n + ".json").exists()) {
+            n++;
+        }
+        return elegirRutaNueva(padre, "Guardar sistema de archivos", carpeta, "sistema_archivos_" + n + ".json",
+                "Sistema de archivos JSON (*.json)", "json");
+    }
+
     /** Muestra un mensaje de error modal. */
     static void error(Component padre, String titulo, String mensaje) {
         Avisos.error(padre, titulo, mensaje);

@@ -12,6 +12,10 @@ import avilaos.estructuras.ListaEnlazada;
 import avilaos.estructuras.Nodo;
 import avilaos.log.Debug;
 import avilaos.log.LogEventos;
+import avilaos.so.GeneradorIds;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.concurrent.Semaphore;
 
 /** Guarda los dos JSON obligatorios del Proyecto 2 y solo arma el sistema cuando ambos están cargados. */
@@ -134,6 +138,36 @@ public class CargaSimulacion {
         cluster.getComputador(0).getSistemaArchivos().cargar(fs.entradas(), problemas);
         Debug.ok(ORIGEN, "sistema armado con " + problemas.tamano() + " observaciones de carga");
         return new Resultado(cluster, null, problemas);
+    }
+
+    /** Arma el sistema desde cero (IDs desde 1) y crea los procesos del JSON; es lo que hace la interfaz al abrir o reiniciar. */
+    public Resultado armarConProcesos(LogEventos log) {
+        GeneradorIds.reiniciar();
+        Resultado resultado = armar(log);
+        if (resultado.armado()) {
+            DatosProcesos datos = getProcesos();
+            int creados = resultado.cluster().cargarProcesosArchivo(datos.procesos());
+            if (creados < datos.procesos().tamano()) {
+                resultado.problemas().agregarFinal((datos.procesos().tamano() - creados) + " procesos del JSON no se pudieron crear"
+                        + " (memoria mayor que la RAM o datos inválidos)");
+            }
+        }
+        return resultado;
+    }
+
+    /** Guarda el sistema de archivos actual en un archivo temporal y lo usa: reiniciar con otros procesos sin perder el disco. */
+    public boolean usarEstadoActual(Computador computador) {
+        try {
+            Path temporal = Files.createTempFile("avilaos-estado-fs", ".json");
+            temporal.toFile().deleteOnExit();
+            if (!ArchivoSistemaArchivos.guardar(computador.getSistemaArchivos(), computador.getDisco(), temporal.toString())) {
+                return false;
+            }
+            return usarSistemaArchivos(ArchivoSistemaArchivos.leer(temporal.toString()));
+        } catch (IOException e) {
+            Debug.error(ORIGEN, "no se pudo guardar el estado actual del disco: " + e.getMessage());
+            return false;
+        }
     }
 
     /** Configuración de ÁvilaOS para el Proyecto 2: siempre un computador y sin procesos del Proyecto 1. */
