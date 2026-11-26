@@ -31,7 +31,8 @@ public class DialogoProceso extends DialogoFormulario {
     private static final int DIGITOS_DEADLINE = 9;
 
     private final JTextField nombre = new CampoTexto(12);
-    private final JComboBox<TipoProceso> tipo = new JComboBox<>(TipoProceso.values());
+    private final JComboBox<TipoProceso> tipo = new JComboBox<>(new TipoProceso[] {TipoProceso.CPU_BOUND,
+        TipoProceso.IO_BOUND, TipoProceso.PRODUCTOR, TipoProceso.CONSUMIDOR});
     private final JComboBox<Integer> prioridad = new JComboBox<>();
     private final JTextField memoria = new CampoTexto(12);
     private final JTextField deadline = new CampoTexto(12);
@@ -215,6 +216,7 @@ public class DialogoProceso extends DialogoFormulario {
                     (String) buffer.getSelectedItem(), ciclos.valor(), elem.valor(), destino);
             case CONSUMIDOR -> DatosProceso.consumidor(nombreProceso, prio, mem.valor(), dead.valor(),
                     (String) buffer.getSelectedItem(), ciclos.valor(), elem.valor(), destino);
+            case ES_ARCHIVO -> throw new IllegalStateException("este formulario no crea procesos de E/S de archivos");
         };
         String motivo = cluster.validarProceso(datos);
         if (motivo != null) {

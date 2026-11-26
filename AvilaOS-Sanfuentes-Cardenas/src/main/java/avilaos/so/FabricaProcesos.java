@@ -1,8 +1,11 @@
 package avilaos.so;
 
+import avilaos.enums.Permiso;
 import avilaos.enums.TipoProceso;
 import avilaos.log.Debug;
+import avilaos.so.archivos.Usuario;
 import avilaos.so.programas.Programa;
+import avilaos.so.programas.ProgramaArchivo;
 import avilaos.so.programas.ProgramaCPUBound;
 import avilaos.so.programas.ProgramaConsumidor;
 import avilaos.so.programas.ProgramaIOBound;
@@ -39,6 +42,57 @@ public final class FabricaProcesos {
         return pcb;
     }
 
+    /** Crea el PCB de un proceso de E/S de archivos que actúa como el usuario indicado; null con ERROR si algo no sirve. */
+    public static PCB crearArchivo(DatosProcesoArchivo datos, Usuario usuario, Permiso permiso, int computador,
+            long cicloActual) {
+        String errores = validarArchivo(datos, usuario, permiso);
+        if (!errores.isEmpty()) {
+            Debug.error(ORIGEN, "proceso de E/S rechazado:" + errores);
+            return null;
+        }
+        DatosES pedido = new DatosES(usuario, datos.operacion(), datos.ruta(), datos.bloquesArchivo(), datos.nuevoNombre(),
+                permiso);
+        Programa programa = new ProgramaArchivo(datos.instrucciones(), pedido.describir());
+        PCB pcb = new PCB(GeneradorIds.siguienteId(), datos.nombre().trim(), TipoProceso.ES_ARCHIVO, programa,
+                datos.memoria(), datos.prioridad(), datos.deadline(), computador, cicloActual, pedido);
+        Debug.ok(ORIGEN, "creado " + pcb.getEtiqueta() + " '" + pcb.getNombre() + "': " + programa.descripcion()
+                + ", usuario=" + usuario.nombre() + ", memoria=" + pcb.getMemoria() + ", deadline=" + pcb.getDeadlineInicial());
+        return pcb;
+    }
+
+    /** Errores de los datos de un proceso de E/S de archivos, o vacío si son válidos. */
+    public static String validarArchivo(DatosProcesoArchivo datos, Usuario usuario, Permiso permiso) {
+        if (datos == null || usuario == null || permiso == null) {
+            return " faltan los datos, el usuario o el permiso;";
+        }
+        StringBuilder errores = new StringBuilder();
+        if (datos.nombre() == null || datos.nombre().isBlank()) {
+            errores.append(" nombre vacío;");
+        }
+        if (datos.prioridad() < PRIORIDAD_MAXIMA || datos.prioridad() > PRIORIDAD_MINIMA) {
+            errores.append(" prioridad fuera de ").append(PRIORIDAD_MAXIMA).append("..").append(PRIORIDAD_MINIMA).append(";");
+        }
+        if (datos.memoria() <= 0) {
+            errores.append(" memoria debe ser > 0;");
+        }
+        if (datos.deadline() <= 0) {
+            errores.append(" deadline debe ser > 0;");
+        }
+        if (datos.instrucciones() <= 0) {
+            errores.append(" instrucciones debe ser > 0;");
+        }
+        if (datos.operacion() == null || datos.operacion().isIntercambio()) {
+            errores.append(" la operación debe ser crear, leer, actualizar o eliminar;");
+        }
+        if (datos.ruta() == null || datos.ruta().isBlank()) {
+            errores.append(" ruta vacía;");
+        }
+        if (datos.bloquesArchivo() < 0) {
+            errores.append(" los bloques del archivo no pueden ser negativos;");
+        }
+        return errores.toString();
+    }
+
     /** Devuelve la lista de errores de los datos, o vacío si son válidos. */
     public static String validar(DatosProceso datos) {
         StringBuilder errores = new StringBuilder();
@@ -59,6 +113,9 @@ public final class FabricaProcesos {
             errores.append(" computador ").append(datos.computador()).append(" inválido;");
         }
         TipoProceso tipo = datos.tipo();
+        if (tipo == TipoProceso.ES_ARCHIVO) {
+            errores.append(" los procesos de E/S de archivos se crean con sus propios datos;");
+        }
         if (tipo == TipoProceso.CPU_BOUND || tipo == TipoProceso.IO_BOUND) {
             if (datos.instrucciones() <= 0) {
                 errores.append(" instrucciones debe ser > 0;");
@@ -93,6 +150,7 @@ public final class FabricaProcesos {
             case IO_BOUND -> new ProgramaIOBound(datos.instrucciones(), datos.cadaCiclosES(), datos.duracionES());
             case PRODUCTOR -> new ProgramaProductor(datos.buffer().trim(), datos.ciclosPorElemento(), datos.elementos());
             case CONSUMIDOR -> new ProgramaConsumidor(datos.buffer().trim(), datos.ciclosPorElemento(), datos.elementos());
+            case ES_ARCHIVO -> null;
         };
     }
 }

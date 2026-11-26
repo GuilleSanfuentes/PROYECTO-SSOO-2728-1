@@ -5,7 +5,8 @@ public enum TipoProceso {
     CPU_BOUND("CPU bound"),
     IO_BOUND("I/O bound"),
     PRODUCTOR("Productor"),
-    CONSUMIDOR("Consumidor");
+    CONSUMIDOR("Consumidor"),
+    ES_ARCHIVO("E/S de archivos");
 
     private final String nombre;
 
