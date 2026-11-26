@@ -1130,6 +1130,30 @@ public class Kernel implements SistemaOperativo {
         }
     }
 
+    /** Copia las siete colas y el proceso en CPU de una vez, con el mutex tomado, convirtiendo cada PCB para la interfaz. */
+    public <T> ColasKernel<T> fotografiarColas(ConversorPCB<T> conversor, ConversorPCB<String> detalleCPU) {
+        mutex.acquireUninterruptibly();
+        try {
+            return new ColasKernel<>(enEjecucion == null ? null : conversor.convertir(enEjecucion),
+                    detalleCPU.convertir(enEjecucion), convertirTodos(nuevos.getCabeza(), conversor),
+                    convertirTodos(listos.getCabeza(), conversor), convertirTodos(bloqueados.getCabeza(), conversor),
+                    convertirTodos(listosSuspendidos.getCabeza(), conversor),
+                    convertirTodos(bloqueadosSuspendidos.getCabeza(), conversor), convertirTodos(terminados.getCabeza(), conversor));
+        } finally {
+            mutex.release();
+        }
+    }
+
+    /** Convierte una cola completa (llamar con el mutex tomado). */
+    private static <T> ListaEnlazada<T> convertirTodos(Nodo<PCB> nodo, ConversorPCB<T> conversor) {
+        ListaEnlazada<T> copia = new ListaEnlazada<>();
+        while (nodo != null) {
+            copia.agregarFinal(conversor.convertir(nodo.getDato()));
+            nodo = nodo.getSiguiente();
+        }
+        return copia;
+    }
+
     /** Todos los procesos de todas las colas (llamar con el mutex tomado). */
     private ListaEnlazada<PCB> juntarTodos() {
         ListaEnlazada<PCB> todos = new ListaEnlazada<>();

@@ -6,11 +6,12 @@ import avilaos.enums.PoliticaTipo;
 import avilaos.estructuras.ListaEnlazada;
 import avilaos.estructuras.Nodo;
 import avilaos.hardware.CPU;
+import avilaos.so.ColasKernel;
 import avilaos.so.Kernel;
 import avilaos.so.PCB;
 import avilaos.so.programas.Instruccion;
 
-/** Foto inmutable de un computador: CPU, RAM, política y colas, lista para dibujarse en el hilo de Swing. */
+/** Foto inmutable de un computador: CPU, RAM, política y sus siete colas, lista para dibujarse en el hilo de Swing. */
 public record FotoComputador(
         String nombre,
         FilaProceso enCPU,
@@ -27,20 +28,21 @@ public record FotoComputador(
         FilaProceso[] listos,
         FilaProceso[] bloqueados,
         FilaProceso[] terminados,
-        String instruccionPC) {
+        String instruccionPC,
+        FilaProceso[] listosSuspendidos,
+        FilaProceso[] bloqueadosSuspendidos) {
 
-    /** Toma la foto del computador en este instante. */
+    /** Toma la foto del computador: las colas se copian de una vez bajo el semáforo del Kernel. */
     public static FotoComputador de(Computador computador) {
         Kernel kernel = computador.getKernel();
         CPU cpu = computador.getCpu();
-        PCB enEjecucion = kernel.getEnEjecucion();
-        return new FotoComputador(computador.getNombre(),
-                enEjecucion == null ? null : FilaProceso.de(enEjecucion),
+        ColasKernel<FilaProceso> colas = kernel.fotografiarColas(FilaProceso::de, FotoComputador::instruccionEnPC);
+        return new FotoComputador(computador.getNombre(), colas.enCPU(),
                 cpu.getModo(), cpu.isOciosa(), cpu.getUltimaAccion(), cpu.getContador(), cpu.getMar(),
                 computador.getRam().getUsada(), computador.getRam().getCapacidad(),
                 kernel.getPolitica(), kernel.getQuantum(),
-                filas(kernel.getNuevos()), filas(kernel.getListos()),
-                filas(kernel.getBloqueados()), filas(kernel.getTerminados()), instruccionEnPC(enEjecucion));
+                arreglo(colas.nuevos()), arreglo(colas.listos()), arreglo(colas.bloqueados()), arreglo(colas.terminados()),
+                colas.detalleCPU(), arreglo(colas.listosSuspendidos()), arreglo(colas.bloqueadosSuspendidos()));
     }
 
     /** Instrucción guardada en la dirección que indica el Contador (PC) del proceso en CPU: la próxima a ejecutar. */
@@ -56,11 +58,26 @@ public record FotoComputador(
                 + (siguiente.modo() == ModoCPU.SISTEMA_OPERATIVO ? "  (modo SO)" : "  (modo usuario)");
     }
 
-    private static FilaProceso[] filas(ListaEnlazada<PCB> lista) {
+    /** Busca el proceso por ID en la CPU y en las siete colas; null si no está. */
+    public FilaProceso buscar(int id) {
+        if (enCPU != null && enCPU.id() == id) {
+            return enCPU;
+        }
+        for (FilaProceso[] cola : new FilaProceso[][]{nuevos, listos, bloqueados, listosSuspendidos, bloqueadosSuspendidos, terminados}) {
+            for (FilaProceso fila : cola) {
+                if (fila.id() == id) {
+                    return fila;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static FilaProceso[] arreglo(ListaEnlazada<FilaProceso> lista) {
         FilaProceso[] filas = new FilaProceso[lista.tamano()];
-        Nodo<PCB> nodo = lista.getCabeza();
+        Nodo<FilaProceso> nodo = lista.getCabeza();
         for (int i = 0; i < filas.length && nodo != null; i++) {
-            filas[i] = FilaProceso.de(nodo.getDato());
+            filas[i] = nodo.getDato();
             nodo = nodo.getSiguiente();
         }
         return filas;

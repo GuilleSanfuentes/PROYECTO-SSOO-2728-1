@@ -132,7 +132,7 @@ public final class PruebasPaso9 {
     private static void probarModelosDeTabla() {
         r.grupo("Modelos de tabla");
         FilaProceso fila = new FilaProceso(7, "P7-H1", "Calc", TipoProceso.CPU_BOUND, EstadoProceso.BLOQUEADO,
-                5, 3, 4, 10, 20, 30, false, "E/S: 3 ciclos", 1, 64, 4, 0, 2, -1, "", 0, 0, 0);
+                5, 3, 4, 10, 20, 30, false, "E/S: 3 ciclos", 1, 64, 4, 0, 2, -1, "", 0, 0, 0, "", -1, "");
         ModeloTablaPCB sinMotivo = new ModeloTablaPCB(false);
         ModeloTablaPCB conMotivo = new ModeloTablaPCB(true);
         r.verificar("sin motivo: 7 columnas", sinMotivo.getColumnCount() == 7, String.valueOf(sinMotivo.getColumnCount()));
