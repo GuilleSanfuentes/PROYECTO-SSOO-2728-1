@@ -61,7 +61,8 @@ public class Computador {
             this.disco = new DiscoSD("SD" + sufijo, configDisco.bloquesArchivos(), configDisco.bloquesSwap(),
                     configDisco.cabezalInicial(), configDisco.velocidad());
             this.asignador = new AsignadorBloques("Asignador" + sufijo, disco);
-            this.planificadorDisco = new PlanificadorDisco("PlanifDisco" + sufijo, disco, configDisco.politica(), log);
+            this.planificadorDisco = new PlanificadorDisco("PlanifDisco" + sufijo, disco, configDisco.politica(), log,
+                    configDisco.ciclosAnticipacion());
             this.sistemaArchivos = new SistemaArchivos("FS" + sufijo, asignador);
         }
         Debug.ok(nombre, "ensamblado: RAM " + ram.getCapacidad() + ", " + planificador.describir());
