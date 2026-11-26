@@ -24,7 +24,12 @@ final class SelectorConfiguracion {
 
     /** Pide la ruta del PNG del gráfico (sugiere salida/utilizacion_cpu.png y confirma si sobrescribe); null si se cancela. */
     static File elegirParaExportarPNG(Component padre) {
-        File sugerido = new File(GraficoUtilizacion.RUTA_POR_DEFECTO).getAbsoluteFile();
+        return elegirParaExportarPNG(padre, GraficoUtilizacion.RUTA_POR_DEFECTO);
+    }
+
+    /** Pide la ruta de un PNG sugiriendo la indicada y confirma si sobrescribe; null si se cancela. */
+    static File elegirParaExportarPNG(Component padre, String rutaSugerida) {
+        File sugerido = new File(rutaSugerida).getAbsoluteFile();
         return elegirRutaNueva(padre, "Exportar gráfico", sugerido.getParentFile(), sugerido.getName(),
                 "Imagen PNG (*.png)", "png");
     }
