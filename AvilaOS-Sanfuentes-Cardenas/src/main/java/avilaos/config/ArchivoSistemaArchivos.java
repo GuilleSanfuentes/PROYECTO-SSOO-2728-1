@@ -262,7 +262,7 @@ public final class ArchivoSistemaArchivos {
     }
 
     /** Anota las claves que no son del formato (no aparta la entrada). */
-    private static void avisarClaves(JsonObject o, String[] permitidas, String donde, ListaEnlazada<String> problemas) {
+    static void avisarClaves(JsonObject o, String[] permitidas, String donde, ListaEnlazada<String> problemas) {
         Nodo<String> clave = ClavesJson.de(o).getCabeza();
         while (clave != null) {
             boolean conocida = false;
