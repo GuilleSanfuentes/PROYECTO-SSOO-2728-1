@@ -20,7 +20,8 @@ public final class AvanceProyecto {
         "Procesos de E/S de archivos",
         "Siete estados y swap",
         "Métricas y gráfico del disco",
-        "GUI del disco y archivos"
+        "GUI del disco y archivos",
+        "Robustez y escenario de suspensión"
     };
 
     private static final int[] ETAPA = {
@@ -40,7 +41,8 @@ public final class AvanceProyecto {
         15,
         16,
         17,
-        18
+        18,
+        19
     };
 
     private AvanceProyecto() {
