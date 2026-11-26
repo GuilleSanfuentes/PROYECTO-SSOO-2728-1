@@ -6,8 +6,7 @@ import avilaos.enums.EstadoProceso;
 import avilaos.estructuras.ListaEnlazada;
 import avilaos.estructuras.Nodo;
 import avilaos.hardware.CPU;
-import avilaos.so.PCB;
-import avilaos.so.programas.ProgramaBuffer;
+import avilaos.so.ResumenProceso;
 import avilaos.sync.Buffer;
 import avilaos.sync.EstadoBuffer;
 
@@ -21,8 +20,9 @@ public final class CalculadorMetricas {
     public static Metricas computador(Cluster cluster, int numero) {
         Computador c = cluster.getComputador(numero);
         CPU cpu = c.getCpu();
-        return calcular(c.getNombre(), c.getKernel().getTodos(), cpu.getCiclosUsuario(), cpu.getCiclosSO(),
-                cpu.getCiclosOciosos(), cluster.getReloj().getCiclo());
+        long ciclo = cluster.getReloj().getCiclo();
+        return calcular(c.getNombre(), c.getKernel().getResumenes(ciclo), cpu.getCiclosUsuario(), cpu.getCiclosSO(),
+                cpu.getCiclosOciosos(), ciclo);
     }
 
     /** Métricas de todo el clúster: todos los procesos y la suma de los contadores de todas las CPUs. */
@@ -36,24 +36,37 @@ public final class CalculadorMetricas {
             so += cpu.getCiclosSO();
             ociosos += cpu.getCiclosOciosos();
         }
-        return calcular("Clúster", cluster.todosLosProcesos(), usuario, so, ociosos, cluster.getReloj().getCiclo());
+        long ciclo = cluster.getReloj().getCiclo();
+        return calcular("Clúster", resumenes(cluster, ciclo), usuario, so, ociosos, ciclo);
+    }
+
+    /** Fotos de los procesos de todos los computadores, cada computador copiado bajo su propio mutex. */
+    private static ListaEnlazada<ResumenProceso> resumenes(Cluster cluster, long ciclo) {
+        ListaEnlazada<ResumenProceso> todos = new ListaEnlazada<>();
+        for (int i = 0; i < cluster.cantidadComputadores(); i++) {
+            Nodo<ResumenProceso> nodo = cluster.getComputador(i).getKernel().getResumenes(ciclo).getCabeza();
+            while (nodo != null) {
+                todos.agregarFinal(nodo.getDato());
+                nodo = nodo.getSiguiente();
+            }
+        }
+        return todos;
     }
 
     /** Una fila por buffer: elementos producidos y consumidos y tiempo promedio que sus procesos pasaron bloqueados en semáforos. */
     public static ListaEnlazada<MetricasBuffer> buffers(Cluster cluster) {
         ListaEnlazada<MetricasBuffer> filas = new ListaEnlazada<>();
-        ListaEnlazada<PCB> procesos = cluster.todosLosProcesos();
-        long ciclo = cluster.getReloj().getCiclo();
+        ListaEnlazada<ResumenProceso> procesos = resumenes(cluster, cluster.getReloj().getCiclo());
         Nodo<Buffer> nodo = cluster.getBuffers().copiar().getCabeza();
         while (nodo != null) {
             EstadoBuffer e = nodo.getDato().estado();
             int cantidad = 0;
             long bloqueado = 0;
-            Nodo<PCB> proceso = procesos.getCabeza();
+            Nodo<ResumenProceso> proceso = procesos.getCabeza();
             while (proceso != null) {
-                if (proceso.getDato().getPrograma() instanceof ProgramaBuffer programa && programa.getBuffer().equals(e.nombre())) {
+                if (e.nombre().equals(proceso.getDato().buffer())) {
                     cantidad++;
-                    bloqueado += proceso.getDato().getCiclosBloqueadoSemaforoHasta(ciclo);
+                    bloqueado += proceso.getDato().ciclosEnSemaforo();
                 }
                 proceso = proceso.getSiguiente();
             }
@@ -65,25 +78,26 @@ public final class CalculadorMetricas {
     }
 
     /** Calcula las métricas de un grupo de procesos con los ciclos de CPU indicados. */
-    static Metricas calcular(String nombre, ListaEnlazada<PCB> procesos, long usuario, long so, long ociosos, long ciclos) {
+    static Metricas calcular(String nombre, ListaEnlazada<ResumenProceso> procesos, long usuario, long so, long ociosos,
+            long ciclos) {
         int terminadosOk = 0;
         int vencidos = 0;
         int vivos = 0;
         int conRespuesta = 0;
         long sumaRespuesta = 0;
-        Nodo<PCB> nodo = procesos.getCabeza();
+        Nodo<ResumenProceso> nodo = procesos.getCabeza();
         while (nodo != null) {
-            PCB p = nodo.getDato();
-            if (p.getEstado() != EstadoProceso.TERMINADO) {
+            ResumenProceso p = nodo.getDato();
+            if (p.estado() != EstadoProceso.TERMINADO) {
                 vivos++;
-            } else if (p.isDeadlineVencido()) {
+            } else if (p.deadlineVencido()) {
                 vencidos++;
             } else {
                 terminadosOk++;
             }
-            if (p.getTiempoRespuesta() >= 0) {
+            if (p.tiempoRespuesta() >= 0) {
                 conRespuesta++;
-                sumaRespuesta += p.getTiempoRespuesta();
+                sumaRespuesta += p.tiempoRespuesta();
             }
             nodo = nodo.getSiguiente();
         }
@@ -91,9 +105,9 @@ public final class CalculadorMetricas {
         int indice = 0;
         nodo = procesos.getCabeza();
         while (nodo != null) {
-            PCB p = nodo.getDato();
-            if (p.getEstado() == EstadoProceso.TERMINADO && !p.isDeadlineVencido()) {
-                retornos[indice++] = (double) p.getTiempoRetorno() / p.getPrograma().totalInstrucciones();
+            ResumenProceso p = nodo.getDato();
+            if (p.estado() == EstadoProceso.TERMINADO && !p.deadlineVencido()) {
+                retornos[indice++] = (double) p.tiempoRetorno() / p.instrucciones();
             }
             nodo = nodo.getSiguiente();
         }

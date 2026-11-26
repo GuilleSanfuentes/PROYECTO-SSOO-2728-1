@@ -91,7 +91,8 @@ public class PCB {
 
     /** Instrucción a la que apunta el Contador, o null si el programa terminó. */
     public Instruccion instruccionActual() {
-        return programaTerminado() ? null : programa.instruccionEn(contador);
+        int actual = contador;
+        return actual >= programa.totalInstrucciones() ? null : programa.instruccionEn(actual);
     }
 
     /** Avanza Contador y MAR una posición tras ejecutar una instrucción. */

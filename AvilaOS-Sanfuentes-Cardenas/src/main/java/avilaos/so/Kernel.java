@@ -1087,20 +1087,41 @@ public class Kernel implements SistemaOperativo {
     public ListaEnlazada<PCB> getTodos() {
         mutex.acquireUninterruptibly();
         try {
-            ListaEnlazada<PCB> todos = new ListaEnlazada<>();
-            agregarTodos(todos, nuevos.getCabeza());
-            agregarTodos(todos, listos.getCabeza());
-            if (enEjecucion != null) {
-                todos.agregarFinal(enEjecucion);
-            }
-            agregarTodos(todos, bloqueados.getCabeza());
-            agregarTodos(todos, listosSuspendidos.getCabeza());
-            agregarTodos(todos, bloqueadosSuspendidos.getCabeza());
-            agregarTodos(todos, terminados.getCabeza());
-            return todos;
+            return juntarTodos();
         } finally {
             mutex.release();
         }
+    }
+
+    /** Foto de los datos de cada proceso tomada de una vez: ninguno cambia mientras se copia. */
+    public ListaEnlazada<ResumenProceso> getResumenes(long ciclo) {
+        mutex.acquireUninterruptibly();
+        try {
+            ListaEnlazada<ResumenProceso> resumenes = new ListaEnlazada<>();
+            Nodo<PCB> nodo = juntarTodos().getCabeza();
+            while (nodo != null) {
+                resumenes.agregarFinal(ResumenProceso.de(nodo.getDato(), ciclo));
+                nodo = nodo.getSiguiente();
+            }
+            return resumenes;
+        } finally {
+            mutex.release();
+        }
+    }
+
+    /** Todos los procesos de todas las colas (llamar con el mutex tomado). */
+    private ListaEnlazada<PCB> juntarTodos() {
+        ListaEnlazada<PCB> todos = new ListaEnlazada<>();
+        agregarTodos(todos, nuevos.getCabeza());
+        agregarTodos(todos, listos.getCabeza());
+        if (enEjecucion != null) {
+            todos.agregarFinal(enEjecucion);
+        }
+        agregarTodos(todos, bloqueados.getCabeza());
+        agregarTodos(todos, listosSuspendidos.getCabeza());
+        agregarTodos(todos, bloqueadosSuspendidos.getCabeza());
+        agregarTodos(todos, terminados.getCabeza());
+        return todos;
     }
 
     /** Proceso en ejecución o null. */
