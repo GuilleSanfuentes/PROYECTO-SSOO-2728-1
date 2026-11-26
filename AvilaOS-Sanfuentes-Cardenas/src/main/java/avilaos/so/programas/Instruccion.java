@@ -9,6 +9,7 @@ public record Instruccion(TipoInstruccion tipo, RolSemaforo semaforo) {
 
     public static final Instruccion CALCULO = new Instruccion(TipoInstruccion.CALCULO, null);
     public static final Instruccion SOLICITAR_ES = new Instruccion(TipoInstruccion.SOLICITAR_ES, null);
+    public static final Instruccion SOLICITAR_DISCO = new Instruccion(TipoInstruccion.SOLICITAR_DISCO, null);
     public static final Instruccion INSERTAR = new Instruccion(TipoInstruccion.INSERTAR, null);
     public static final Instruccion EXTRAER = new Instruccion(TipoInstruccion.EXTRAER, null);
 

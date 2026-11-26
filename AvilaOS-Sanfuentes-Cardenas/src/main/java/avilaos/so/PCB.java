@@ -39,10 +39,21 @@ public class PCB {
     private long cicloInicioBloqueoSemaforo;
     private long ciclosBloqueadoSemaforo;
     private boolean deadlineVencido;
+    private final DatosES datosES;
+    private SolicitudPendiente solicitudPendiente;
+    private boolean vencidoEnDisco;
+    private String motivoRechazo;
 
     /** Crea el PCB en estado Nuevo. Usar FabricaProcesos, que valida los datos. */
     PCB(int id, String nombre, TipoProceso tipo, Programa programa, int memoria, int prioridad,
             int deadline, int computador, long cicloLlegada) {
+        this(id, nombre, tipo, programa, memoria, prioridad, deadline, computador, cicloLlegada, null);
+    }
+
+    /** Crea el PCB con los datos de E/S de archivos (null en los demás tipos). */
+    PCB(int id, String nombre, TipoProceso tipo, Programa programa, int memoria, int prioridad,
+            int deadline, int computador, long cicloLlegada, DatosES datosES) {
+        this.datosES = datosES;
         this.id = id;
         this.nombre = nombre;
         this.tipo = tipo;
@@ -320,6 +331,40 @@ public class PCB {
 
     public boolean isDeadlineVencido() {
         return deadlineVencido;
+    }
+
+    /** Operación, ruta, bloques y nombre nuevo de un proceso de E/S de archivos; null en los demás. */
+    public DatosES getDatosES() {
+        return datosES;
+    }
+
+    /** Solicitud al disco que el proceso está esperando, o null. */
+    public SolicitudPendiente getSolicitudPendiente() {
+        return solicitudPendiente;
+    }
+
+    /** Anota la solicitud que se espera; null cuando el disco ya respondió o se canceló. */
+    public void setSolicitudPendiente(SolicitudPendiente pendiente) {
+        this.solicitudPendiente = pendiente;
+    }
+
+    /** Indica si el deadline venció mientras el disco atendía su solicitud. */
+    public boolean isVencidoEnDisco() {
+        return vencidoEnDisco;
+    }
+
+    /** Deja constancia de que el proceso debe terminar por deadline cuando el disco acabe. */
+    public void marcarVencidoEnDisco() {
+        this.vencidoEnDisco = true;
+    }
+
+    /** Motivo por el que falló su operación de archivos, o null si no falló. */
+    public String getMotivoRechazo() {
+        return motivoRechazo;
+    }
+
+    public void setMotivoRechazo(String motivo) {
+        this.motivoRechazo = motivo;
     }
 
     /** Resumen del tipo P3-H1 'calc' [Listo] prio=2 dl=88 Contador=12/40. */

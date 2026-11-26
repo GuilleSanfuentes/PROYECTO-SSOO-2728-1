@@ -69,7 +69,8 @@ public final class PruebasPaso14 {
         r.verificar("se puede cargar, sin observaciones", d.cargable() && d.problemas().estaVacia(), texto(d.problemas()));
         r.verificar("ciclo de 300 ms, swap de 100 y política FIFO",
                 d.duracionCicloMs() == 300 && d.bloquesSwap() == 100 && d.politicaDisco() == PoliticaDiscoTipo.FIFO, d.toString());
-        r.verificar("velocidad del cabezal 1 y debugger sin indicar", d.velocidadCabezal() == 1 && d.debugger() == null, "");
+        r.verificar("velocidad del cabezal 2, espera de 18 ciclos y debugger sin indicar", d.velocidadCabezal() == 2
+                && d.ciclosAnticipacion() == 18 && d.debugger() == null, "");
         r.verificar("RAM 1024, FCFS y quantum 0 (3 por dentro)", d.ram() == 1024 && d.politica() == PoliticaTipo.FCFS
                 && d.quantum() == 0 && d.quantumInterno() == 3, d.quantum() + " / " + d.quantumInterno());
         r.verificar("sin buffers", d.buffers().estaVacia(), "");
@@ -157,7 +158,7 @@ public final class PruebasPaso14 {
                 + "\"processes\":[]}";
         DatosProcesos d = ArchivoProcesos.interpretar(malos);
         r.verificar("valores inválidos: se carga con los de por defecto", d.cargable() && d.duracionCicloMs() == 500
-                && d.bloquesSwap() == 100 && d.politicaDisco() == PoliticaDiscoTipo.FIFO && d.velocidadCabezal() == 1
+                && d.bloquesSwap() == 100 && d.politicaDisco() == PoliticaDiscoTipo.FIFO && d.velocidadCabezal() == 2
                 && d.debugger() == null && d.ram() == 1024 && d.politica() == PoliticaTipo.FCFS && d.quantum() == 3,
                 d.toString());
         r.verificar("se reportan los 8 valores", d.problemas().tamano() == 8, texto(d.problemas()));
@@ -247,7 +248,7 @@ public final class PruebasPaso14 {
         r.verificar("exactamente 1 computador", cluster.cantidadComputadores() == 1 && cluster.getComputador(1) == null, "");
         r.verificar("disco de 200 bloques + 100 de swap", disco.getBloquesArchivos() == 200 && disco.getBloquesSwap() == 100
                 && disco.getTotalPosiciones() == 300, disco.getTotalPosiciones() + "");
-        r.verificar("cabezal en 50 y velocidad 1", disco.getCabezal() == 50 && disco.getVelocidad() == 1,
+        r.verificar("cabezal en 50 y velocidad 2", disco.getCabezal() == 50 && disco.getVelocidad() == 2,
                 disco.getCabezal() + " / " + disco.getVelocidad());
         r.verificar("política de disco FIFO", pc.getPlanificadorDisco().getPolitica() == PoliticaDiscoTipo.FIFO, "");
         r.verificar("RAM 1024, FCFS, quantum interno 3 y 300 ms por ciclo", pc.getRam().getCapacidad() == 1024
@@ -306,10 +307,11 @@ public final class PruebasPaso14 {
                 && disco.getCiclosMoviendo() == 0 && disco.getCiclosTransfiriendo() == 0, "");
         pc.getPlanificadorDisco().encolar(1, "P1", TipoOperacionES.LEER, "/sistema/script.py",
                 pc.getSistemaArchivos().bloquesDe("/sistema/script.py"), cluster.getReloj().getCiclo());
-        cluster.getReloj().ejecutarCiclos(13);
-        r.verificar("una solicitud al bloque 62: 12 ciclos de movimiento y 1 de lectura",
+        cluster.getReloj().ejecutarCiclos(25);
+        r.verificar("una solicitud al bloque 62: 18 ciclos de espera, 6 de movimiento y 1 de lectura",
                 pc.getPlanificadorDisco().getAtendidas() == 1 && disco.getCabezal() == 62
-                && disco.getDesplazamientoTotal() == 12 && disco.getCiclosTransfiriendo() == 1,
+                && disco.getDesplazamientoTotal() == 12 && disco.getCiclosMoviendo() == 6
+                && disco.getCiclosTransfiriendo() == 1 && disco.getCiclosOciosos() == 38,
                 disco.getCabezal() + " / " + disco.getDesplazamientoTotal());
         r.verificar("cero ERROR", Debug.getErrores() == errores, (Debug.getErrores() - errores) + "");
         cluster.apagar();
@@ -358,7 +360,7 @@ public final class PruebasPaso14 {
                 texto(leido.problemas()));
         String guardado = leerTexto(archivo);
         r.verificar("conserva quantum 0 y no agrega claves opcionales", guardado.contains("\"quantum\": 0")
-                && !guardado.contains("headSpeed") && !guardado.contains("priority") && !guardado.contains("newName")
+                && !guardado.contains("headSpeed") && !guardado.contains("anticipationCycles") &&!guardado.contains("priority") && !guardado.contains("newName")
                 && !guardado.contains("buffers") && !guardado.contains("debugger"), guardado);
         DatosProcesos completo = ArchivoProcesos.interpretar(json("\"headSpeed\":3,\"debugger\":true,", "C-SCAN",
                 "ROUND_ROBIN", "4", BUENO.replace("READ", "UPDATE").replace("}", ",\"priority\":2,\"newName\":\"z\"}"))

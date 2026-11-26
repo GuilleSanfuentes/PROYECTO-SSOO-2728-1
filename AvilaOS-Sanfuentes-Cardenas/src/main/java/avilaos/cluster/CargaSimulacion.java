@@ -126,7 +126,7 @@ public class CargaSimulacion {
             Debug.setActivo(datos.debugger());
         }
         ConfigDisco disco = new ConfigDisco(fs.totalBloques(), datos.bloquesSwap(), fs.cabezalInicial(),
-                datos.velocidadCabezal(), datos.politicaDisco());
+                datos.velocidadCabezal(), datos.politicaDisco(), datos.ciclosAnticipacion());
         Cluster cluster = new Cluster(configuracion(datos), log, disco);
         ListaEnlazada<String> problemas = new ListaEnlazada<>();
         copiar(fs.problemas(), problemas);

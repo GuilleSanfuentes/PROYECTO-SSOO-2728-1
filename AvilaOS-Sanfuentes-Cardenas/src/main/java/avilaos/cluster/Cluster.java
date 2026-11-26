@@ -5,6 +5,7 @@ import avilaos.config.CondicionesParada;
 import avilaos.config.ConfigComputador;
 import avilaos.config.ConfigDisco;
 import avilaos.config.ConfiguracionSistema;
+import avilaos.enums.Permiso;
 import avilaos.enums.PoliticaTipo;
 import avilaos.estructuras.ListaEnlazada;
 import avilaos.estructuras.Nodo;
@@ -15,6 +16,8 @@ import avilaos.log.Debug;
 import avilaos.log.LogEventos;
 import avilaos.metricas.RegistroUtilizacion;
 import avilaos.so.DatosProceso;
+import avilaos.so.DatosProcesoArchivo;
+import avilaos.so.archivos.Usuario;
 import avilaos.so.FabricaProcesos;
 import avilaos.so.PCB;
 import avilaos.sync.Buffer;
@@ -223,6 +226,49 @@ public class Cluster implements ObservadorReloj {
         registrarProceso(datos);
         inactivo = false;
         return pcb;
+    }
+
+    /** Motivo por el que no se puede crear ahora el proceso de E/S de archivos, o null si los datos son válidos. */
+    public String validarProcesoArchivo(DatosProcesoArchivo datos, Usuario usuario, Permiso permiso) {
+        if (computadores[0].getDisco() == null) {
+            return "este computador no tiene disco";
+        }
+        String errores = FabricaProcesos.validarArchivo(datos, usuario, permiso).trim();
+        if (!errores.isEmpty()) {
+            return errores.endsWith(";") ? errores.substring(0, errores.length() - 1) : errores;
+        }
+        int ram = computadores[0].getRam().getCapacidad();
+        return datos.memoria() > ram ? "pide " + datos.memoria() + " de memoria y la RAM total es " + ram : null;
+    }
+
+    /** Crea un proceso de E/S de archivos que actúa como el usuario; permiso es el de lo que llegue a crear. */
+    public PCB crearProcesoArchivo(DatosProcesoArchivo datos, Usuario usuario, Permiso permiso) {
+        long ciclo = reloj.getCiclo();
+        String error = validarProcesoArchivo(datos, usuario, permiso);
+        if (error != null) {
+            Debug.error(ORIGEN, "proceso '" + (datos == null ? null : datos.nombre()) + "' rechazado: " + error);
+            return null;
+        }
+        PCB pcb = FabricaProcesos.crearArchivo(datos, usuario, permiso, 0, ciclo);
+        if (pcb == null || !computadores[0].getKernel().agregarProceso(pcb, ciclo)) {
+            return null;
+        }
+        inactivo = false;
+        return pcb;
+    }
+
+    /** Crea los procesos leídos del JSON de procesos: actúan como admin y lo que crean es público. Devuelve cuántos. */
+    public int cargarProcesosArchivo(ListaEnlazada<DatosProcesoArchivo> procesos) {
+        int creados = 0;
+        Nodo<DatosProcesoArchivo> nodo = procesos.getCabeza();
+        while (nodo != null) {
+            if (crearProcesoArchivo(nodo.getDato(), Usuario.ADMIN, Permiso.PUBLICO) != null) {
+                creados++;
+            }
+            nodo = nodo.getSiguiente();
+        }
+        Debug.ok(ORIGEN, creados + " de " + procesos.tamano() + " procesos de E/S de archivos creados");
+        return creados;
     }
 
     /** Guarda los datos de un buffer creado con éxito, para poder guardarlos en la configuración. */

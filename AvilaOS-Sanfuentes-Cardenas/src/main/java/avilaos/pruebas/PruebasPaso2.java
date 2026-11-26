@@ -216,6 +216,7 @@ public final class PruebasPaso2 {
             String abreviada = switch (ins.tipo()) {
                 case CALCULO -> "C";
                 case SOLICITAR_ES -> "E";
+                case SOLICITAR_DISCO -> "D";
                 case SEM_WAIT -> "W(" + ins.semaforo().getNombre() + ")";
                 case SEM_SIGNAL -> "S(" + ins.semaforo().getNombre() + ")";
                 case INSERTAR -> "I";

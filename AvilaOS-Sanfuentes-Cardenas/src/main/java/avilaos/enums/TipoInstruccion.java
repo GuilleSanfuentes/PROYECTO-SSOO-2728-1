@@ -4,7 +4,8 @@ package avilaos.enums;
 public enum TipoInstruccion {
     CALCULO("Cálculo", ModoCPU.USUARIO),
     SOLICITAR_ES("Solicitud de E/S", ModoCPU.SISTEMA_OPERATIVO),
-    SEM_WAIT("semWait", ModoCPU.SISTEMA_OPERATIVO),
+    SOLICITAR_DISCO("Solicitud al disco", ModoCPU.SISTEMA_OPERATIVO),
+    SEM_WAIT("semWait",ModoCPU.SISTEMA_OPERATIVO),
     SEM_SIGNAL("semSignal", ModoCPU.SISTEMA_OPERATIVO),
     INSERTAR("Insertar en buffer", ModoCPU.SISTEMA_OPERATIVO),
     EXTRAER("Extraer del buffer", ModoCPU.SISTEMA_OPERATIVO);

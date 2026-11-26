@@ -23,6 +23,7 @@ public class SistemaArchivos {
     private final AsignadorBloques asignador;
     private final Semaphore mutex = new Semaphore(1);
     private final NodoArbol<EntradaFS> raiz;
+    private final ListaEnlazada<ReservaArchivo> reservas = new ListaEnlazada<>();
     private int siguienteId = 1;
 
     /** Crea un sistema de archivos vacío (solo la raíz, del administrador y pública) sobre el asignador del SD. */
@@ -157,6 +158,130 @@ public class SistemaArchivos {
         return operarSobreExistente(usuario, ruta, Accion.ELIMINAR, null);
     }
 
+    // ---------------------------------------------------------------- reservas y cambios diferidos
+
+    /** Aparta los bloques de un archivo nuevo sin mostrarlo todavía en el árbol; su nombre queda tomado. */
+    public ResultadoReserva reservar(Usuario usuario, String rutaPadre, String nombreNuevo, int bloques, String dueno,
+            Permiso permiso, String creador) {
+        mutex.acquireUninterruptibly();
+        try {
+            String motivo = motivoCrearInterno(usuario, rutaPadre, TipoEntrada.ARCHIVO);
+            if (dueno == null && usuario != null) {
+                dueno = usuario.nombre();
+            }
+            if (motivo == null && !usuario.esAdmin() && !usuario.nombre().equals(dueno)) {
+                motivo = "el usuario " + usuario.nombre() + " solo puede crear archivos a su nombre";
+            }
+            if (motivo == null) {
+                motivo = motivoNuevo(rutaPadre, nombreNuevo, dueno, permiso);
+            }
+            if (motivo == null && bloques <= 0) {
+                motivo = "el tamaño debe ser de al menos 1 bloque (pidió " + bloques + ")";
+            }
+            int primero = Bloque.FIN;
+            if (motivo == null) {
+                primero = asignador.asignar(marca(siguienteId), bloques);
+                if (primero == Bloque.FIN) {
+                    motivo = "no hay bloques libres suficientes (pide " + bloques + ", libres "
+                            + asignador.getDisco().contarLibres(false) + ")";
+                }
+            }
+            if (motivo != null) {
+                rechazo("reservar archivo", motivo);
+                return new ResultadoReserva(null, motivo);
+            }
+            ReservaArchivo reserva = new ReservaArchivo(siguienteId++, buscarNodo(normalizar(rutaPadre)).getDato().id,
+                    nombreNuevo, dueno.trim(), permiso, aArreglo(asignador.recorrer(primero)),
+                    creador == null || creador.isBlank() ? "desconocido" : creador);
+            reservas.agregarFinal(reserva);
+            Debug.ok(nombre, "reservados " + bloques + " bloques desde el " + primero + " para " + nombreNuevo);
+            return new ResultadoReserva(reserva, null);
+        } finally {
+            mutex.release();
+        }
+    }
+
+    /** Hace aparecer en el árbol un archivo reservado; si su directorio ya no existe, libera los bloques y lo rechaza. */
+    public ResultadoFS confirmar(ReservaArchivo reserva) {
+        mutex.acquireUninterruptibly();
+        try {
+            if (!quitarReserva(reserva)) {
+                return ResultadoFS.rechazo("la reserva no está pendiente");
+            }
+            NodoArbol<EntradaFS> padre = buscarPorId(raiz, reserva.idPadre());
+            if (padre == null || !padre.getDato().esDirectorio() || buscarHijo(padre, reserva.nombre()) != null) {
+                asignador.liberarCadena(reserva.bloques()[0]);
+                return rechazo("crear archivo", padre == null ? "el directorio destino de " + reserva.nombre() + " ya no existe"
+                        : "ya no se puede crear " + reserva.nombre() + " en " + ruta(padre));
+            }
+            EntradaFS entrada = new EntradaFS(reserva.id(), TipoEntrada.ARCHIVO, reserva.nombre(), reserva.dueno(),
+                    reserva.permiso(), reserva.bloques()[0], reserva.bloques().length, reserva.creador());
+            NodoArbol<EntradaFS> nodo = new NodoArbol<>(entrada);
+            padre.agregarHijo(nodo);
+            Debug.ok(nombre, "archivo creado: " + ruta(nodo) + " (" + entrada.bloques + " bloques desde el "
+                    + entrada.primerBloque + ", dueño " + entrada.dueno + ")");
+            return ResultadoFS.hecho(info(nodo), entrada.bloques);
+        } finally {
+            mutex.release();
+        }
+    }
+
+    /** Descarta una reserva y libera sus bloques. Devuelve false con ERROR si no estaba pendiente. */
+    public boolean anular(ReservaArchivo reserva) {
+        mutex.acquireUninterruptibly();
+        try {
+            if (!quitarReserva(reserva)) {
+                return false;
+            }
+            asignador.liberarCadena(reserva.bloques()[0]);
+            Debug.ok(nombre, "reserva de " + reserva.nombre() + " anulada: " + reserva.bloques().length + " bloques libres");
+            return true;
+        } finally {
+            mutex.release();
+        }
+    }
+
+    /** Cantidad de archivos reservados que aún no aparecen en el árbol. */
+    public int reservasPendientes() {
+        mutex.acquireUninterruptibly();
+        try {
+            return reservas.tamano();
+        } finally {
+            mutex.release();
+        }
+    }
+
+    /** Como leer, pero sobre la entrada con ese id aunque haya cambiado de nombre. */
+    public ResultadoFS leerPorId(Usuario usuario, int id) {
+        return operarPorId(usuario, id, Accion.LEER, null);
+    }
+
+    /** Como escribir, pero sobre la entrada con ese id. */
+    public ResultadoFS escribirPorId(Usuario usuario, int id) {
+        return operarPorId(usuario, id, Accion.ESCRIBIR, null);
+    }
+
+    /** Como renombrar, pero sobre la entrada con ese id. */
+    public ResultadoFS renombrarPorId(Usuario usuario, int id, String nuevoNombre) {
+        return operarPorId(usuario, id, Accion.RENOMBRAR, nuevoNombre);
+    }
+
+    /** Como eliminar, pero sobre la entrada con ese id. */
+    public ResultadoFS eliminarPorId(Usuario usuario, int id) {
+        return operarPorId(usuario, id, Accion.ELIMINAR, null);
+    }
+
+    /** Motivo por el que la ruta no puede pasar a llamarse así, o null si el nombre está disponible. */
+    public String motivoNuevoNombre(String ruta, String nuevoNombre) {
+        mutex.acquireUninterruptibly();
+        try {
+            NodoArbol<EntradaFS> nodo = buscarNodo(normalizar(ruta));
+            return nodo == null || nodo == raiz ? ruta + " no se puede renombrar" : motivoRenombre(nodo, nuevoNombre);
+        } finally {
+            mutex.release();
+        }
+    }
+
     /** Carga entradas ya validadas del JSON: primero los directorios por profundidad, luego los archivos. */
     public int cargar(ListaEnlazada<DatosEntrada> entradas, ListaEnlazada<String> problemas) {
         int cargadas = 0;
@@ -219,6 +344,32 @@ public class SistemaArchivos {
                 bloques[i] = cadena.obtener(i);
             }
             return bloques;
+        } finally {
+            mutex.release();
+        }
+    }
+
+    /** Foto de la entrada con ese id, o null si ya no existe. */
+    public InfoEntrada buscarPorId(int id) {
+        mutex.acquireUninterruptibly();
+        try {
+            NodoArbol<EntradaFS> nodo = buscarPorId(raiz, id);
+            return nodo == null ? null : info(nodo);
+        } finally {
+            mutex.release();
+        }
+    }
+
+    /** Bloques de todos los archivos bajo la ruta (o del propio archivo), uno tras otro; vacío si no ocupa ninguno. */
+    public int[] bloquesDeSubarbol(String ruta) {
+        mutex.acquireUninterruptibly();
+        try {
+            NodoArbol<EntradaFS> nodo = buscarNodo(normalizar(ruta));
+            ListaEnlazada<Integer> bloques = new ListaEnlazada<>();
+            if (nodo != null) {
+                juntarBloques(nodo, bloques);
+            }
+            return aArreglo(bloques);
         } finally {
             mutex.release();
         }
@@ -300,7 +451,19 @@ public class SistemaArchivos {
         mutex.acquireUninterruptibly();
         try {
             NodoArbol<EntradaFS> nodo = buscarPorMarca(raiz, duenoBloque);
-            return nodo == null ? null : ruta(nodo);
+            if (nodo != null) {
+                return ruta(nodo);
+            }
+            Nodo<ReservaArchivo> reserva = reservas.getCabeza();
+            while (reserva != null) {
+                NodoArbol<EntradaFS> padre = buscarPorId(raiz, reserva.getDato().idPadre());
+                if (padre != null && marca(reserva.getDato().id()).equals(duenoBloque)) {
+                    String base = ruta(padre);
+                    return (base.equals(RAIZ) ? "" : base) + RAIZ + reserva.getDato().nombre();
+                }
+                reserva = reserva.getSiguiente();
+            }
+            return null;
         } finally {
             mutex.release();
         }
@@ -330,6 +493,16 @@ public class SistemaArchivos {
                 }
                 bloquesArchivos += a.bloques();
                 nodo = nodo.getSiguiente();
+            }
+            Nodo<ReservaArchivo> reserva = reservas.getCabeza();
+            while (reserva != null) {
+                for (int numero : reserva.getDato().bloques()) {
+                    if (!marca(reserva.getDato().id()).equals(disco.leer(numero).dueno())) {
+                        return integridadRota("el bloque reservado " + numero + " tiene otra marca");
+                    }
+                }
+                bloquesArchivos += reserva.getDato().bloques().length;
+                reserva = reserva.getSiguiente();
             }
             int ocupados = disco.getBloquesArchivos() - disco.contarLibres(false);
             if (ocupados != bloquesArchivos) {
@@ -426,47 +599,141 @@ public class SistemaArchivos {
     private ResultadoFS operarSobreExistente(Usuario usuario, String ruta, Accion accion, String nuevoNombre) {
         mutex.acquireUninterruptibly();
         try {
-            String motivo = motivoSobreExistente(usuario, ruta, accion);
-            if (motivo != null) {
-                return rechazo(accion.verbo, motivo);
-            }
-            NodoArbol<EntradaFS> nodo = buscarNodo(normalizar(ruta));
-            EntradaFS entrada = nodo.getDato();
-            switch (accion) {
-                case LEER -> {
-                    entrada.ultimaOperacion = "Leer";
-                    return ResultadoFS.hecho(info(nodo), entrada.bloques);
-                }
-                case ESCRIBIR -> {
-                    entrada.ultimaOperacion = "Actualizar";
-                    Debug.ok(nombre, usuario.nombre() + " actualiza " + ruta(nodo));
-                    return ResultadoFS.hecho(info(nodo), entrada.bloques);
-                }
-                case RENOMBRAR -> {
-                    String problema = motivoNombre(nuevoNombre);
-                    if (problema == null && buscarHijo(nodo.getPadre(), nuevoNombre) != null) {
-                        problema = "ya existe '" + nuevoNombre + "' en " + ruta(nodo.getPadre());
-                    }
-                    if (problema != null) {
-                        return rechazo("cambiar el nombre", problema);
-                    }
-                    String anterior = ruta(nodo);
-                    entrada.nombre = nuevoNombre;
-                    entrada.ultimaOperacion = "Actualizar (renombrar)";
-                    Debug.ok(nombre, "renombrado: " + anterior + " -> " + ruta(nodo));
-                    return ResultadoFS.hecho(info(nodo), entrada.bloques);
-                }
-                default -> {
-                    InfoEntrada borrada = info(nodo);
-                    int liberados = liberarSubarbol(nodo);
-                    nodo.getPadre().quitarHijo(nodo);
-                    Debug.ok(nombre, "eliminado " + borrada.ruta() + ": " + liberados + " bloques liberados");
-                    return ResultadoFS.hecho(borrada, liberados);
-                }
-            }
+            return aplicarAccion(usuario, ruta, accion, nuevoNombre);
         } finally {
             mutex.release();
         }
+    }
+
+    /** Busca la entrada por su id y aplica la acción sin soltar el mutex. */
+    private ResultadoFS operarPorId(Usuario usuario, int id, Accion accion, String nuevoNombre) {
+        mutex.acquireUninterruptibly();
+        try {
+            NodoArbol<EntradaFS> nodo = buscarPorId(raiz, id);
+            if (nodo == null) {
+                return rechazo(accion.verbo, "el archivo o directorio ya no existe");
+            }
+            return aplicarAccion(usuario, ruta(nodo), accion, nuevoNombre);
+        } finally {
+            mutex.release();
+        }
+    }
+
+    /** Comprueba permisos y aplica la acción (llamar con el mutex tomado). */
+    private ResultadoFS aplicarAccion(Usuario usuario, String ruta, Accion accion, String nuevoNombre) {
+        String motivo = motivoSobreExistente(usuario, ruta, accion);
+        if (motivo != null) {
+            return rechazo(accion.verbo, motivo);
+        }
+        NodoArbol<EntradaFS> nodo = buscarNodo(normalizar(ruta));
+        EntradaFS entrada = nodo.getDato();
+        switch (accion) {
+            case LEER -> {
+                entrada.ultimaOperacion = "Leer";
+                return ResultadoFS.hecho(info(nodo), entrada.bloques);
+            }
+            case ESCRIBIR -> {
+                entrada.ultimaOperacion = "Actualizar";
+                Debug.ok(nombre, usuario.nombre() + " actualiza " + ruta(nodo));
+                return ResultadoFS.hecho(info(nodo), entrada.bloques);
+            }
+            case RENOMBRAR -> {
+                String problema = motivoRenombre(nodo, nuevoNombre);
+                if (problema != null) {
+                    return rechazo("cambiar el nombre", problema);
+                }
+                String anterior = ruta(nodo);
+                entrada.nombre = nuevoNombre;
+                entrada.ultimaOperacion = "Actualizar (renombrar)";
+                Debug.ok(nombre, "renombrado: " + anterior + " -> " + ruta(nodo));
+                return ResultadoFS.hecho(info(nodo), entrada.bloques);
+            }
+            default -> {
+                InfoEntrada borrada = info(nodo);
+                int liberados = liberarSubarbol(nodo);
+                nodo.getPadre().quitarHijo(nodo);
+                Debug.ok(nombre, "eliminado " + borrada.ruta() + ": " + liberados + " bloques liberados");
+                return ResultadoFS.hecho(borrada, liberados);
+            }
+        }
+    }
+
+    /** Problema del nombre nuevo para ese nodo, o null (llamar con el mutex tomado). */
+    private String motivoRenombre(NodoArbol<EntradaFS> nodo, String nuevoNombre) {
+        String problema = motivoNombre(nuevoNombre);
+        if (problema != null) {
+            return problema;
+        }
+        if (buscarHijo(nodo.getPadre(), nuevoNombre) != null) {
+            return "ya existe '" + nuevoNombre + "' en " + ruta(nodo.getPadre());
+        }
+        return nombreReservado(nodo.getPadre().getDato().id, nuevoNombre)
+                ? "ya hay una creación pendiente de '" + nuevoNombre + "' en " + ruta(nodo.getPadre()) : null;
+    }
+
+    /** Indica si una creación pendiente ya tomó ese nombre en el directorio (llamar con el mutex tomado). */
+    private boolean nombreReservado(int idPadre, String nombreBuscado) {
+        Nodo<ReservaArchivo> reserva = reservas.getCabeza();
+        while (reserva != null) {
+            if (reserva.getDato().idPadre() == idPadre && reserva.getDato().nombre().equals(nombreBuscado)) {
+                return true;
+            }
+            reserva = reserva.getSiguiente();
+        }
+        return false;
+    }
+
+    /** Saca la reserva de la lista de pendientes; false con ERROR si no estaba (llamar con el mutex tomado). */
+    private boolean quitarReserva(ReservaArchivo reserva) {
+        if (reserva != null && reservas.eliminar(reserva)) {
+            return true;
+        }
+        Debug.error(nombre, "la reserva no está pendiente: " + (reserva == null ? "nula" : reserva.nombre()));
+        return false;
+    }
+
+    /** Agrega los bloques de cada archivo del subárbol (llamar con el mutex tomado). */
+    private void juntarBloques(NodoArbol<EntradaFS> nodo, ListaEnlazada<Integer> bloques) {
+        if (!nodo.getDato().esDirectorio()) {
+            Nodo<Integer> b = asignador.recorrer(nodo.getDato().primerBloque).getCabeza();
+            while (b != null) {
+                bloques.agregarFinal(b.getDato());
+                b = b.getSiguiente();
+            }
+            return;
+        }
+        Nodo<NodoArbol<EntradaFS>> hijo = nodo.getHijos().getCabeza();
+        while (hijo != null) {
+            juntarBloques(hijo.getDato(), bloques);
+            hijo = hijo.getSiguiente();
+        }
+    }
+
+    /** Copia una lista de números a un arreglo. */
+    private static int[] aArreglo(ListaEnlazada<Integer> lista) {
+        int[] arreglo = new int[lista.tamano()];
+        Nodo<Integer> nodo = lista.getCabeza();
+        for (int i = 0; i < arreglo.length; i++) {
+            arreglo[i] = nodo.getDato();
+            nodo = nodo.getSiguiente();
+        }
+        return arreglo;
+    }
+
+    /** Busca en el subárbol la entrada con ese id. */
+    private static NodoArbol<EntradaFS> buscarPorId(NodoArbol<EntradaFS> nodo, int id) {
+        if (nodo.getDato().id == id) {
+            return nodo;
+        }
+        Nodo<NodoArbol<EntradaFS>> hijo = nodo.getHijos().getCabeza();
+        while (hijo != null) {
+            NodoArbol<EntradaFS> encontrado = buscarPorId(hijo.getDato(), id);
+            if (encontrado != null) {
+                return encontrado;
+            }
+            hijo = hijo.getSiguiente();
+        }
+        return null;
     }
 
     /** Reglas de permisos sobre una entrada existente (llamar con el mutex tomado). */
@@ -539,6 +806,9 @@ public class SistemaArchivos {
         }
         if (buscarHijo(buscarNodo(normalizar(rutaPadre)), nombreNuevo) != null) {
             return "ya existe '" + nombreNuevo + "' en " + normalizar(rutaPadre);
+        }
+        if (nombreReservado(buscarNodo(normalizar(rutaPadre)).getDato().id, nombreNuevo)) {
+            return "ya hay una creación pendiente de '" + nombreNuevo + "' en " + normalizar(rutaPadre);
         }
         if (dueno == null || dueno.isBlank()) {
             return "falta el dueño";

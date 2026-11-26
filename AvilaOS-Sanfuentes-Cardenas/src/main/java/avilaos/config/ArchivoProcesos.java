@@ -36,11 +36,14 @@ public final class ArchivoProcesos {
     public static final String CLAVE_PROCESOS = "processes";
     public static final String CLAVE_BUFFERS = "buffers";
     public static final int MAX_SWAP = ArchivoSistemaArchivos.MAX_BLOQUES;
-    public static final int VELOCIDAD_POR_DEFECTO = 1;
+    public static final int VELOCIDAD_POR_DEFECTO = 2;
+    public static final int ANTICIPACION_POR_DEFECTO = 18;
+    public static final int MAX_ANTICIPACION = 1000;
 
     private static final String ORIGEN = "ConfigProcesos";
     private static final String[] CLAVES_RAIZ = {CLAVE_GLOBAL, CLAVE_COMPUTADOR, CLAVE_PROCESOS, CLAVE_BUFFERS};
-    private static final String[] CLAVES_GLOBAL = {"cycleDurationMs", "swapSizeBlocks", "initialDiskPolicy", "headSpeed", "debugger"};
+    private static final String[] CLAVES_GLOBAL = {"cycleDurationMs", "swapSizeBlocks", "initialDiskPolicy", "headSpeed",
+        "anticipationCycles", "debugger"};
     private static final String[] CLAVES_PC = {"ramCapacity", "policy", "quantum"};
     private static final String[] CLAVES_BUFFER = {"name", "capacity"};
     private static final String[] CLAVES_PROCESO = {"name", "memory", "deadline", "instructions", "targetPath", "operation",
@@ -123,6 +126,9 @@ public final class ArchivoProcesos {
         if (datos.velocidadCabezal() != VELOCIDAD_POR_DEFECTO) {
             global.addProperty("headSpeed", datos.velocidadCabezal());
         }
+        if (datos.ciclosAnticipacion() != ANTICIPACION_POR_DEFECTO) {
+            global.addProperty("anticipationCycles", datos.ciclosAnticipacion());
+        }
         if (datos.debugger() != null) {
             global.addProperty("debugger", datos.debugger());
         }
@@ -196,6 +202,9 @@ public final class ArchivoProcesos {
         int velocidad = global.has("headSpeed")
                 ? numero(global, "headSpeed", 1, DiscoSD.MAX_VELOCIDAD, VELOCIDAD_POR_DEFECTO, CLAVE_GLOBAL, problemas)
                 : VELOCIDAD_POR_DEFECTO;
+        int anticipacion = global.has("anticipationCycles")
+                ? numero(global, "anticipationCycles", 0, MAX_ANTICIPACION, ANTICIPACION_POR_DEFECTO, CLAVE_GLOBAL, problemas)
+                : ANTICIPACION_POR_DEFECTO;
         Boolean debugger = null;
         if (global.has("debugger")) {
             debugger = ArchivoConfiguracion.interpretarBooleano(global.get("debugger"));
@@ -231,8 +240,8 @@ public final class ArchivoProcesos {
             Debug.info(ORIGEN, "procesos leídos: " + procesos.tamano() + " de " + lista.size() + " válidos, "
                     + problemas.tamano() + " observaciones");
         }
-        return new DatosProcesos(true, duracion, swap, politicaDisco, velocidad, debugger, ram, politica, quantum,
-                buffers, procesos, problemas);
+        return new DatosProcesos(true, duracion, swap, politicaDisco, velocidad, anticipacion, debugger, ram, politica,
+                quantum, buffers, procesos, problemas);
     }
 
     /** Política de CPU por su nombre (admite espacios o guiones en vez de _); si no existe se usa la de por defecto. */
@@ -396,7 +405,7 @@ public final class ArchivoProcesos {
         problemas.agregarFinal(motivo);
         Debug.error(ORIGEN, "no se pueden cargar los procesos: " + motivo);
         return new DatosProcesos(false, ConfiguracionSistema.DEF_DURACION_MS, DiscoSD.SWAP_POR_DEFECTO, PoliticaDiscoTipo.FIFO,
-                VELOCIDAD_POR_DEFECTO, null, ConfiguracionSistema.DEF_RAM, ConfiguracionSistema.DEF_POLITICA,
+                VELOCIDAD_POR_DEFECTO, ANTICIPACION_POR_DEFECTO, null, ConfiguracionSistema.DEF_RAM,ConfiguracionSistema.DEF_POLITICA,
                 ConfiguracionSistema.DEF_QUANTUM, new ListaEnlazada<>(), new ListaEnlazada<>(), problemas);
     }
 }
