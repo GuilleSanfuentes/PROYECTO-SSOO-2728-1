@@ -6,7 +6,9 @@ import avilaos.config.ConfigComputador;
 import avilaos.config.ConfigDisco;
 import avilaos.config.ConfiguracionSistema;
 import avilaos.enums.Permiso;
+import avilaos.enums.PoliticaDiscoTipo;
 import avilaos.enums.PoliticaTipo;
+import avilaos.so.disco.PlanificadorDisco;
 import avilaos.estructuras.ListaEnlazada;
 import avilaos.estructuras.Nodo;
 import avilaos.hardware.LineaInterrupciones;
@@ -363,6 +365,16 @@ public class Cluster implements ObservadorReloj {
         }
         computadores[computador].getKernel().cambiarPolitica(tipo, reloj.getCiclo());
         return true;
+    }
+
+    /** Cambia la política del disco en plena ejecución; la solicitud en curso termina normalmente. */
+    public boolean cambiarPoliticaDisco(PoliticaDiscoTipo tipo) {
+        PlanificadorDisco disco = computadores[0].getPlanificadorDisco();
+        if (disco == null || tipo == null) {
+            Debug.error(ORIGEN, "cambiarPoliticaDisco: " + (disco == null ? "el computador no tiene disco" : "política nula"));
+            return false;
+        }
+        return disco.cambiarPolitica(tipo, reloj.getCiclo());
     }
 
     /** Cambia el quantum de Round Robin de un computador. */
