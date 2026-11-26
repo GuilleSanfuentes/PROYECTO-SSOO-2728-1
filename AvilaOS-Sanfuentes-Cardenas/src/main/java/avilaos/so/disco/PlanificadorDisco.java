@@ -39,13 +39,26 @@ public class PlanificadorDisco implements ControladorDisco {
     private int siguienteId = 1;
     private long atendidas;
     private long esperaTotal;
+    private final int anticipacion;
+    private boolean colaEstrenable = true;
+    private int ciclosPorEsperar;
     private volatile AlTerminar alTerminar;
 
-    /** Crea el planificador y lo conecta como controlador del disco. */
+    /** Crea el planificador sin espera anticipatoria y lo conecta como controlador del disco. */
     public PlanificadorDisco(String nombre, DiscoSD disco, PoliticaDiscoTipo inicial, LogEventos log) {
+        this(nombre, disco, inicial, log, 0);
+    }
+
+    /** Crea el planificador que espera hasta anticipacion ciclos antes de elegir cuando llega trabajo a un disco libre. */
+    public PlanificadorDisco(String nombre, DiscoSD disco, PoliticaDiscoTipo inicial, LogEventos log, int anticipacion) {
         this.nombre = nombre;
         this.disco = disco;
         this.log = log;
+        if (anticipacion < 0) {
+            Debug.error(nombre, "espera anticipatoria inválida " + anticipacion + ", se desactiva");
+            anticipacion = 0;
+        }
+        this.anticipacion = anticipacion;
         if (inicial == null) {
             Debug.error(nombre, "política de disco inicial nula, se usa FIFO");
         }
@@ -82,7 +95,13 @@ public class PlanificadorDisco implements ControladorDisco {
         mutex.acquireUninterruptibly();
         try {
             if (actual == null) {
-                evento = decidir(ciclo);
+                if (anticipar()) {
+                    evento = ciclosPorEsperar == anticipacion - 1 ? "El disco espera " + anticipacion
+                            + " ciclos anticipando solicitudes (" + politica.getTipo().getNombre() + ")" : null;
+                    disco.ocioso();
+                } else {
+                    evento = decidir(ciclo);
+                }
             }
             if (actual != null) {
                 int bloque = actual.bloques()[indiceBloque];
@@ -112,6 +131,64 @@ public class PlanificadorDisco implements ControladorDisco {
                 aviso.solicitudAtendida(terminada, ciclo);
             }
         }
+    }
+
+    /** Indica si este ciclo se gasta esperando más solicitudes; la ventana empieza con la primera y no se reinicia. */
+    private boolean anticipar() {
+        if (cola.estaVacia()) {
+            return false;
+        }
+        if (colaEstrenable) {
+            colaEstrenable = false;
+            ciclosPorEsperar = anticipacion;
+        }
+        if (ciclosPorEsperar == 0) {
+            return false;
+        }
+        ciclosPorEsperar--;
+        return true;
+    }
+
+    /** Deja lista una nueva ventana de espera si no queda nada en la cola (con el mutex tomado). */
+    private void rearmarEspera() {
+        if (cola.estaVacia()) {
+            colaEstrenable = true;
+            ciclosPorEsperar = 0;
+        }
+    }
+
+    /** Quita de la cola la solicitud del proceso. Devuelve null si no está en cola (no existe o ya se atiende). */
+    public SolicitudDisco cancelar(int idProceso, long ciclo) {
+        SolicitudDisco cancelada = null;
+        mutex.acquireUninterruptibly();
+        try {
+            Nodo<SolicitudDisco> nodo = cola.getCabeza();
+            while (nodo != null && cancelada == null) {
+                if (nodo.getDato().idProceso() == idProceso) {
+                    cancelada = nodo.getDato();
+                }
+                nodo = nodo.getSiguiente();
+            }
+            if (cancelada != null) {
+                cola.eliminar(cancelada);
+                if (actual == null) {
+                    rearmarEspera();
+                }
+            }
+        } finally {
+            mutex.release();
+        }
+        if (cancelada != null) {
+            Debug.ok(nombre, "cancela #" + cancelada.id() + ": " + cancelada.describir());
+            registrar(ciclo, "El disco cancela la solicitud en cola de " + cancelada.etiqueta() + " (bloque "
+                    + cancelada.destino() + ")");
+        }
+        return cancelada;
+    }
+
+    /** Ciclos de la espera anticipatoria configurada (0 = desactivada). */
+    public int getAnticipacion() {
+        return anticipacion;
     }
 
     /** Pide paradas a la política hasta tomar una solicitud o gastar el ciclo moviendo o saltando (con el mutex tomado). */
@@ -156,6 +233,7 @@ public class PlanificadorDisco implements ControladorDisco {
         }
         actual = null;
         indiceBloque = 0;
+        rearmarEspera();
     }
 
     /** Cambia la política en plena ejecución; la solicitud en curso termina normalmente. */
