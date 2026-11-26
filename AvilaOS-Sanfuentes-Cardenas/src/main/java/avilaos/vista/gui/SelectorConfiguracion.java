@@ -24,7 +24,12 @@ final class SelectorConfiguracion {
 
     /** Pide la ruta del PNG del gráfico (sugiere salida/utilizacion_cpu.png y confirma si sobrescribe); null si se cancela. */
     static File elegirParaExportarPNG(Component padre) {
-        File sugerido = new File(GraficoUtilizacion.RUTA_POR_DEFECTO).getAbsoluteFile();
+        return elegirParaExportarPNG(padre, GraficoUtilizacion.RUTA_POR_DEFECTO);
+    }
+
+    /** Pide la ruta de un PNG sugiriendo la indicada y confirma si sobrescribe; null si se cancela. */
+    static File elegirParaExportarPNG(Component padre, String rutaSugerida) {
+        File sugerido = new File(rutaSugerida).getAbsoluteFile();
         return elegirRutaNueva(padre, "Exportar gráfico", sugerido.getParentFile(), sugerido.getName(),
                 "Imagen PNG (*.png)", "png");
     }
@@ -37,6 +42,27 @@ final class SelectorConfiguracion {
             return selector.getSelectedFile();
         }
         return null;
+    }
+
+    /** Pide un JSON a cargar con el título indicado (sistema de archivos o procesos); null si se cancela. */
+    static File elegirJSON(Component padre, String titulo) {
+        JFileChooser selector = nuevoSelector(carpetaConfig(), "Archivo JSON (*.json)", "json");
+        selector.setDialogTitle(titulo);
+        if (selector.showOpenDialog(padre) == JFileChooser.APPROVE_OPTION) {
+            return selector.getSelectedFile();
+        }
+        return null;
+    }
+
+    /** Pide dónde guardar el sistema de archivos (sugiere un nombre libre y confirma si sobrescribe); null si se cancela. */
+    static File elegirParaGuardarSistemaArchivos(Component padre) {
+        File carpeta = carpetaConfig();
+        int n = 1;
+        while (new File(carpeta, "sistema_archivos_" + n + ".json").exists()) {
+            n++;
+        }
+        return elegirRutaNueva(padre, "Guardar sistema de archivos", carpeta, "sistema_archivos_" + n + ".json",
+                "Sistema de archivos JSON (*.json)", "json");
     }
 
     /** Muestra un mensaje de error modal. */

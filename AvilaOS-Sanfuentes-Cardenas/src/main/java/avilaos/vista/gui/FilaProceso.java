@@ -30,12 +30,16 @@ public record FilaProceso(
         String buffer,
         int elementosProcesados,
         int elementosObjetivo,
-        long ciclosBloqueadoSemaforo) {
+        long ciclosBloqueadoSemaforo,
+        String operacionES,
+        int bloqueSwap,
+        String rechazo) {
 
-    /** Toma la copia del PCB en este instante. */
+    /** Toma la copia del PCB en este instante (llamar con el semáforo del Kernel tomado, vía fotografiarColas). */
     public static FilaProceso de(PCB pcb) {
         String motivo = "";
-        if (pcb.getEstado() == EstadoProceso.BLOQUEADO && pcb.getMotivoBloqueo() != MotivoBloqueo.NINGUNO) {
+        boolean bloqueado = pcb.getEstado() == EstadoProceso.BLOQUEADO || pcb.getEstado() == EstadoProceso.BLOQUEADO_SUSPENDIDO;
+        if (bloqueado && pcb.getMotivoBloqueo() != MotivoBloqueo.NINGUNO) {
             motivo = pcb.getMotivoBloqueo().getNombre()
                     + (pcb.getDetalleBloqueo().isEmpty() ? "" : ": " + pcb.getDetalleBloqueo());
         }
@@ -50,7 +54,14 @@ public record FilaProceso(
                 pcb.getPrograma().totalInstrucciones(), pcb.getDeadlineRestante(), pcb.getDeadlineInicial(),
                 pcb.isDeadlineVencido(), motivo, pcb.getComputador(), pcb.getMemoria(), pcb.getMar(),
                 pcb.getCicloLlegada(), pcb.getCicloPrimeraEjecucion(), pcb.getCicloFin(), buffer,
-                pcb.getElementosProcesados(), objetivo, pcb.getCiclosBloqueadoSemaforo());
+                pcb.getElementosProcesados(), objetivo, pcb.getCiclosBloqueadoSemaforo(),
+                pcb.getDatosES() == null ? "" : pcb.getDatosES().describir(), pcb.getBloqueSwap(),
+                pcb.getMotivoRechazo() == null ? "" : pcb.getMotivoRechazo());
+    }
+
+    /** Indica si es un proceso de E/S de archivos. */
+    public boolean esDeArchivo() {
+        return !operacionES.isEmpty();
     }
 
     /** Prioridad como "base" o "base>efectiva" si el envejecimiento la mejoró. */

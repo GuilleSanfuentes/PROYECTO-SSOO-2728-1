@@ -8,6 +8,10 @@ import avilaos.hardware.ControladorDisco;
 import avilaos.hardware.DiscoSD;
 import avilaos.log.Debug;
 import avilaos.log.LogEventos;
+import avilaos.metricas.CambioPolitica;
+import avilaos.metricas.MetricasDisco;
+import avilaos.metricas.PuntoDesplazamiento;
+import avilaos.metricas.SerieDesplazamiento;
 import avilaos.so.disco.politicas.FabricaPoliticasDisco;
 import avilaos.so.disco.politicas.Parada;
 import avilaos.so.disco.politicas.PoliticaDisco;
@@ -35,10 +39,16 @@ public class PlanificadorDisco implements ControladorDisco {
     private final long[] atendidasPorPolitica = new long[PoliticaDiscoTipo.values().length];
     private PoliticaDisco politica;
     private SolicitudDisco actual;
+    private PoliticaDiscoTipo politicaDeActual;
     private int indiceBloque;
     private int siguienteId = 1;
     private long atendidas;
     private long esperaTotal;
+    private long esperaAnticipadaTotal;
+    private long ciclosAnticipados;
+    private long ultimoCicloDisco;
+    private final SerieDesplazamiento serie = new SerieDesplazamiento();
+    private final ListaEnlazada<CambioPolitica> cambios = new ListaEnlazada<>();
     private final int anticipacion;
     private boolean colaEstrenable = true;
     private int ciclosPorEsperar;
@@ -77,7 +87,8 @@ public class PlanificadorDisco implements ControladorDisco {
         SolicitudDisco solicitud;
         mutex.acquireUninterruptibly();
         try {
-            solicitud = new SolicitudDisco(siguienteId++, idProceso, etiqueta, operacion, ruta, bloques.clone(), ciclo);
+            solicitud = new SolicitudDisco(siguienteId++, idProceso, etiqueta, operacion, ruta, bloques.clone(), ciclo,
+                    ciclosAnticipados);
             cola.agregarFinal(solicitud);
         } finally {
             mutex.release();
@@ -116,6 +127,8 @@ public class PlanificadorDisco implements ControladorDisco {
                     }
                 }
             }
+            ultimoCicloDisco = ciclo;
+            serie.registrar(ciclo, disco.getDesplazamientoTotal());
         } finally {
             mutex.release();
         }
@@ -146,6 +159,7 @@ public class PlanificadorDisco implements ControladorDisco {
             return false;
         }
         ciclosPorEsperar--;
+        ciclosAnticipados++;
         return true;
     }
 
@@ -211,9 +225,11 @@ public class PlanificadorDisco implements ControladorDisco {
             }
             if (parada.esAtencion()) {
                 actual = parada.solicitud();
+                politicaDeActual = politica.getTipo();
                 cola.eliminar(actual);
                 indiceBloque = 0;
                 esperaTotal += ciclo - actual.cicloLlegada();
+                esperaAnticipadaTotal += ciclosAnticipados - actual.anticipadosAlLlegar();
                 return "El disco atiende la solicitud de " + actual.etiqueta() + " en el bloque " + actual.destino()
                         + " (" + politica.getTipo().getNombre() + ")";
             }
@@ -236,7 +252,7 @@ public class PlanificadorDisco implements ControladorDisco {
     /** Cuenta la solicitud terminada y la pasa al historial (con el mutex tomado). */
     private void cerrarActual() {
         atendidas++;
-        atendidasPorPolitica[politica.getTipo().ordinal()]++;
+        atendidasPorPolitica[politicaDeActual.ordinal()]++;
         historial.agregarFinal(actual);
         if (historial.tamano() > HISTORIAL_MAXIMO) {
             historial.eliminarEn(0);
@@ -257,6 +273,9 @@ public class PlanificadorDisco implements ControladorDisco {
         try {
             anterior = politica.getTipo();
             politica = FabricaPoliticasDisco.crear(tipo);
+            if (anterior != tipo) {
+                cambios.agregarFinal(new CambioPolitica(ultimoCicloDisco + 1, anterior, tipo));
+            }
         } finally {
             mutex.release();
         }
@@ -360,7 +379,7 @@ public class PlanificadorDisco implements ControladorDisco {
         }
     }
 
-    /** Solicitudes terminadas mientras estuvo activa la política indicada. */
+    /** Solicitudes terminadas que eligió la política indicada, aunque hayan acabado después de cambiarla. */
     public long getAtendidasPor(PoliticaDiscoTipo tipo) {
         mutex.acquireUninterruptibly();
         try {
@@ -370,15 +389,84 @@ public class PlanificadorDisco implements ControladorDisco {
         }
     }
 
-    /** Ciclos promedio que esperó en la cola cada solicitud que ya empezó a atenderse. */
+    /** Espera total: ciclos promedio desde que cada solicitud entró en la cola hasta que el disco la eligió. */
     public double getEsperaPromedio() {
         mutex.acquireUninterruptibly();
         try {
-            long empezadas = atendidas + (actual != null ? 1 : 0);
-            return empezadas == 0 ? 0 : (double) esperaTotal / empezadas;
+            return promedio(esperaTotal);
         } finally {
             mutex.release();
         }
+    }
+
+    /** La espera promedio sin contar los ciclos de espera anticipatoria que cada solicitud pasó en la cola. */
+    public double getEsperaPromedioSinAnticipacion() {
+        mutex.acquireUninterruptibly();
+        try {
+            return promedio(esperaTotal - esperaAnticipadaTotal);
+        } finally {
+            mutex.release();
+        }
+    }
+
+    /** Desplazamiento acumulado por ciclo desde el inicio. */
+    public PuntoDesplazamiento[] copiarSerie() {
+        mutex.acquireUninterruptibly();
+        try {
+            return serie.copiar();
+        } finally {
+            mutex.release();
+        }
+    }
+
+    /** Cambios de política en orden. */
+    public ListaEnlazada<CambioPolitica> copiarCambios() {
+        ListaEnlazada<CambioPolitica> copia = new ListaEnlazada<>();
+        mutex.acquireUninterruptibly();
+        try {
+            Nodo<CambioPolitica> nodo = cambios.getCabeza();
+            while (nodo != null) {
+                copia.agregarFinal(nodo.getDato());
+                nodo = nodo.getSiguiente();
+            }
+        } finally {
+            mutex.release();
+        }
+        return copia;
+    }
+
+    /** Foto de todas las métricas bajo un solo mutex; los contadores de suspensión los aporta quien la pide. */
+    public MetricasDisco fotografiar(long suspensiones, long reactivaciones) {
+        mutex.acquireUninterruptibly();
+        try {
+            CambioPolitica[] copiaCambios = new CambioPolitica[cambios.tamano()];
+            Nodo<CambioPolitica> nodo = cambios.getCabeza();
+            for (int i = 0; i < copiaCambios.length; i++) {
+                copiaCambios[i] = nodo.getDato();
+                nodo = nodo.getSiguiente();
+            }
+            return new MetricasDisco(ultimoCicloDisco, politica.getTipo(), disco.getDesplazamientoTotal(), atendidas,
+                    atendidasPorPolitica, atendidas + (actual != null ? 1 : 0), promedio(esperaTotal),
+                    promedio(esperaTotal - esperaAnticipadaTotal), suspensiones, reactivaciones, serie.copiar(), copiaCambios);
+        } finally {
+            mutex.release();
+        }
+    }
+
+    /** La última solicitud terminada, o null si todavía no hay ninguna. */
+    public SolicitudDisco getUltimaAtendida() {
+        mutex.acquireUninterruptibly();
+        try {
+            return historial.ultimo();
+        } finally {
+            mutex.release();
+        }
+    }
+
+    /** Reparte una suma entre las solicitudes que ya empezaron a atenderse (con el mutex tomado). */
+    private double promedio(long suma) {
+        long empezadas = atendidas + (actual != null ? 1 : 0);
+        return empezadas == 0 ? 0 : (double) suma / empezadas;
     }
 
     public DiscoSD getDisco() {

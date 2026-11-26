@@ -21,6 +21,7 @@ import avilaos.hardware.SistemaOperativo;
 import avilaos.hardware.TarjetaRed;
 import avilaos.log.Debug;
 import avilaos.log.LogEventos;
+import avilaos.metricas.MetricasDisco;
 import avilaos.so.archivos.SistemaArchivos;
 import avilaos.so.disco.AsignadorBloques;
 import avilaos.so.disco.PlanificadorDisco;
@@ -715,12 +716,22 @@ public class Kernel implements SistemaOperativo {
 
     /** Suspensiones completadas desde el inicio. */
     public long getSuspensiones() {
-        return suspensiones;
+        mutex.acquireUninterruptibly();
+        try {
+            return suspensiones;
+        } finally {
+            mutex.release();
+        }
     }
 
     /** Reactivaciones completadas desde el inicio. */
     public long getReactivaciones() {
-        return reactivaciones;
+        mutex.acquireUninterruptibly();
+        try {
+            return reactivaciones;
+        } finally {
+            mutex.release();
+        }
     }
 
     /** Saca al proceso de la CPU y lo manda de vuelta a la fila de Listos. */
@@ -1093,8 +1104,8 @@ public class Kernel implements SistemaOperativo {
         }
     }
 
-    /** Foto de los datos de cada proceso tomada de una vez: ninguno cambia mientras se copia. */
-    public ListaEnlazada<ResumenProceso> getResumenes(long ciclo) {
+    /** Foto de los procesos y de los ciclos de CPU tomada de una vez: nada cambia mientras se copia. */
+    public ResumenComputador getResumen(long ciclo) {
         mutex.acquireUninterruptibly();
         try {
             ListaEnlazada<ResumenProceso> resumenes = new ListaEnlazada<>();
@@ -1103,10 +1114,44 @@ public class Kernel implements SistemaOperativo {
                 resumenes.agregarFinal(ResumenProceso.de(nodo.getDato(), ciclo));
                 nodo = nodo.getSiguiente();
             }
-            return resumenes;
+            return new ResumenComputador(resumenes, cpu.getCiclosUsuario(), cpu.getCiclosSO(), cpu.getCiclosOciosos());
         } finally {
             mutex.release();
         }
+    }
+
+    /** Métricas del disco y de la suspensión del mismo instante, o null si el computador no tiene disco. */
+    public MetricasDisco getMetricasDisco() {
+        mutex.acquireUninterruptibly();
+        try {
+            return planificadorDisco == null ? null : planificadorDisco.fotografiar(suspensiones, reactivaciones);
+        } finally {
+            mutex.release();
+        }
+    }
+
+    /** Copia las siete colas y el proceso en CPU de una vez, con el mutex tomado, convirtiendo cada PCB para la interfaz. */
+    public <T> ColasKernel<T> fotografiarColas(ConversorPCB<T> conversor, ConversorPCB<String> detalleCPU) {
+        mutex.acquireUninterruptibly();
+        try {
+            return new ColasKernel<>(enEjecucion == null ? null : conversor.convertir(enEjecucion),
+                    detalleCPU.convertir(enEjecucion), convertirTodos(nuevos.getCabeza(), conversor),
+                    convertirTodos(listos.getCabeza(), conversor), convertirTodos(bloqueados.getCabeza(), conversor),
+                    convertirTodos(listosSuspendidos.getCabeza(), conversor),
+                    convertirTodos(bloqueadosSuspendidos.getCabeza(), conversor), convertirTodos(terminados.getCabeza(), conversor));
+        } finally {
+            mutex.release();
+        }
+    }
+
+    /** Convierte una cola completa (llamar con el mutex tomado). */
+    private static <T> ListaEnlazada<T> convertirTodos(Nodo<PCB> nodo, ConversorPCB<T> conversor) {
+        ListaEnlazada<T> copia = new ListaEnlazada<>();
+        while (nodo != null) {
+            copia.agregarFinal(conversor.convertir(nodo.getDato()));
+            nodo = nodo.getSiguiente();
+        }
+        return copia;
     }
 
     /** Todos los procesos de todas las colas (llamar con el mutex tomado). */

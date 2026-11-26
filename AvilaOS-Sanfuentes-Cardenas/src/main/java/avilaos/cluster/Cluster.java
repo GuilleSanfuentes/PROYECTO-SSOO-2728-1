@@ -6,7 +6,9 @@ import avilaos.config.ConfigComputador;
 import avilaos.config.ConfigDisco;
 import avilaos.config.ConfiguracionSistema;
 import avilaos.enums.Permiso;
+import avilaos.enums.PoliticaDiscoTipo;
 import avilaos.enums.PoliticaTipo;
+import avilaos.so.disco.PlanificadorDisco;
 import avilaos.estructuras.ListaEnlazada;
 import avilaos.estructuras.Nodo;
 import avilaos.hardware.LineaInterrupciones;
@@ -14,6 +16,7 @@ import avilaos.hardware.ObservadorReloj;
 import avilaos.hardware.Reloj;
 import avilaos.log.Debug;
 import avilaos.log.LogEventos;
+import avilaos.metricas.MetricasDisco;
 import avilaos.metricas.RegistroUtilizacion;
 import avilaos.so.DatosProceso;
 import avilaos.so.DatosProcesoArchivo;
@@ -364,6 +367,16 @@ public class Cluster implements ObservadorReloj {
         return true;
     }
 
+    /** Cambia la política del disco en plena ejecución; la solicitud en curso termina normalmente. */
+    public boolean cambiarPoliticaDisco(PoliticaDiscoTipo tipo) {
+        PlanificadorDisco disco = computadores[0].getPlanificadorDisco();
+        if (disco == null || tipo == null) {
+            Debug.error(ORIGEN, "cambiarPoliticaDisco: " + (disco == null ? "el computador no tiene disco" : "política nula"));
+            return false;
+        }
+        return disco.cambiarPolitica(tipo, reloj.getCiclo());
+    }
+
     /** Cambia el quantum de Round Robin de un computador. */
     public boolean cambiarQuantum(int computador, int quantum) {
         if (!existe(computador)) {
@@ -578,6 +591,11 @@ public class Cluster implements ObservadorReloj {
     /** Indica si en el último ciclo todos los computadores estaban sin procesos y ociosos. */
     public boolean isInactivo() {
         return inactivo;
+    }
+
+    /** Métricas del disco y de la suspensión en este instante, o null en el modo del Proyecto 1 (sin disco). */
+    public MetricasDisco getMetricasDisco() {
+        return computadores[0].getKernel().getMetricasDisco();
     }
 
     /** Registro con los buffers creados en el clúster. */

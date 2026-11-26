@@ -14,7 +14,8 @@ public final class FiltroEntrada extends DocumentFilter {
     public enum Tipo {
         DIGITOS,
         NOMBRE,
-        IDENTIFICADOR
+        IDENTIFICADOR,
+        ARCHIVO
     }
 
     public static final int LARGO_NOMBRE = 24;
@@ -45,6 +46,11 @@ public final class FiltroEntrada extends DocumentFilter {
         instalar(campo, Tipo.IDENTIFICADOR, LARGO_IDENTIFICADOR);
     }
 
+    /** El campo acepta nombres de archivo: letras, números, espacios, punto, guion y guion bajo (sin barras), hasta 40. */
+    public static void nombreArchivo(JTextComponent campo) {
+        instalar(campo, Tipo.ARCHIVO, avilaos.so.archivos.SistemaArchivos.MAX_NOMBRE);
+    }
+
     /** Instala el filtro en el documento del campo. */
     public static void instalar(JTextComponent campo, Tipo tipo, int largoMaximo) {
         if (campo.getDocument() instanceof AbstractDocument documento) {
@@ -58,6 +64,7 @@ public final class FiltroEntrada extends DocumentFilter {
             case DIGITOS -> c >= '0' && c <= '9';
             case NOMBRE -> Character.isLetterOrDigit(c) || c == ' ' || c == '-' || c == '_';
             case IDENTIFICADOR -> Character.isLetterOrDigit(c) || c == '-' || c == '_';
+            case ARCHIVO -> Character.isLetterOrDigit(c) || c == ' ' || c == '-' || c == '_' || c == '.';
         };
     }
 

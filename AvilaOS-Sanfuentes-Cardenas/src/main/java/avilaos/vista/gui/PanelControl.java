@@ -1,7 +1,10 @@
 package avilaos.vista.gui;
 
 import avilaos.cluster.Cluster;
+import avilaos.enums.PoliticaDiscoTipo;
 import avilaos.hardware.Reloj;
+import avilaos.so.archivos.Usuario;
+import javax.swing.JComboBox;
 import java.awt.FlowLayout;
 import java.awt.GridLayout;
 import javax.swing.JButton;
@@ -10,10 +13,19 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 
-/** Barra superior: ciclo del reloj, estado de la simulación y botones Iniciar, Pausar/Seguir y Stop. */
-public class PanelControl extends JPanel {
+/** Barra superior: ciclo del reloj, estado de la simulación y botones Iniciar, Pausar/Seguir y Stop; en el Proyecto 2, política de disco y modo. */
+public class PanelControl extends JPanel implements FuenteUsuario {
+
+    private static final String TEXTO_ADMIN = "Administrador (admin)";
+    private static final String PREFIJO_USUARIO = "Usuario: ";
 
     private final Cluster cluster;
+    private final boolean proyecto2;
+    private final JComboBox<PoliticaDiscoTipo> selectorDisco = new JComboBox<>(PoliticaDiscoTipo.values());
+    private final JComboBox<String> selectorModo = new JComboBox<>(new String[]{TEXTO_ADMIN});
+    private final JLabel etiquetaModo = new JLabel();
+    private String[] usuarios = new String[0];
+    private boolean sincronizando;
     private final JLabel etiquetaCiclo = new JLabel("Ciclo: 0");
     private final JLabel etiquetaEstado = new JLabel();
     private final JButton botonIniciar = new BotonSutil("Iniciar");
@@ -27,10 +39,16 @@ public class PanelControl extends JPanel {
     private DialogoBuffer dialogoBuffer;
     private DialogoConfiguracion dialogoConfiguracion;
 
-    /** Arma la barra sobre el clúster indicado. */
+    /** Arma la barra del Proyecto 1 sobre el clúster indicado. */
     public PanelControl(Cluster cluster) {
+        this(cluster, false);
+    }
+
+    /** Arma la barra; en el Proyecto 2 cambia la configuración por los JSON y suma la política de disco y el modo de usuario. */
+    public PanelControl(Cluster cluster, boolean proyecto2) {
         super(new GridLayout(2, 1));
         this.cluster = cluster;
+        this.proyecto2 = proyecto2;
         JPanel fila1 = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 4));
         JPanel fila2 = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 4));
         add(fila1);
@@ -41,10 +59,20 @@ public class PanelControl extends JPanel {
         fila1.add(etiquetaCiclo);
         fila1.add(etiquetaEstado);
         fila1.add(boton("Crear proceso", () -> abrir(dialogoProceso())));
-        fila1.add(boton("Crear buffer", () -> abrir(dialogoBuffer())));
-        fila1.add(boton("Guardar configuración", this::guardarConfiguracion));
-        fila1.add(boton("Cargar configuración", this::cargarConfiguracion));
-        fila1.add(boton("Nueva configuración", () -> abrir(dialogoConfiguracion())));
+        if (proyecto2) {
+            JButton cargar = boton("Cargar JSON...", this::cargarJSON);
+            cargar.setToolTipText("Detiene y vuelve a armar con otros JSON (o con el disco tal como quedó y otros procesos)");
+            fila1.add(cargar);
+            fila1.add(boton("Guardar sistema de archivos", this::guardarSistemaArchivos));
+            armarSelectores(fila1);
+            fila1.remove(botonIniciar);
+            fila1.add(botonIniciar, 0);
+        } else {
+            fila1.add(boton("Crear buffer", () -> abrir(dialogoBuffer())));
+            fila1.add(boton("Guardar configuración", this::guardarConfiguracion));
+            fila1.add(boton("Cargar configuración", this::cargarConfiguracion));
+            fila1.add(boton("Nueva configuración", () -> abrir(dialogoConfiguracion())));
+        }
         fila2.add(new JLabel("Ciclo (ms):"));
         fila2.add(campoDuracion);
         fila2.add(boton("Aplicar", this::aplicarDuracion));
@@ -64,6 +92,117 @@ public class PanelControl extends JPanel {
         botonPausa.addActionListener(e -> alternarPausa());
         botonStop.addActionListener(e -> detener());
         actualizarEstado();
+    }
+
+    /** Selectores de política de disco y de modo de usuario, con el modo activo bien visible. */
+    private void armarSelectores(JPanel fila) {
+        selectorDisco.setRenderer(new javax.swing.DefaultListCellRenderer() {
+            @Override
+            public java.awt.Component getListCellRendererComponent(javax.swing.JList<?> lista, Object valor, int indice,
+                    boolean seleccionado, boolean enfoque) {
+                return super.getListCellRendererComponent(lista, valor instanceof PoliticaDiscoTipo p ? p.getNombre() : valor,
+                        indice, seleccionado, enfoque);
+            }
+        });
+        selectorDisco.setToolTipText("Política de planificación del disco; se puede cambiar en plena ejecución");
+        selectorDisco.addActionListener(e -> {
+            if (!sincronizando && selectorDisco.getSelectedItem() instanceof PoliticaDiscoTipo tipo
+                    && !cluster.cambiarPoliticaDisco(tipo)) {
+                errorCampos.error("No se pudo cambiar la política de disco");
+            }
+        });
+        selectorModo.setToolTipText("Administrador: todas las operaciones. Usuario: solo sus archivos y los públicos");
+        selectorModo.addActionListener(e -> mostrarModo());
+        etiquetaModo.setOpaque(true);
+        etiquetaModo.setForeground(java.awt.Color.WHITE);
+        etiquetaModo.setBorder(javax.swing.BorderFactory.createEmptyBorder(2, 8, 2, 8));
+        fila.add(new JLabel("Disco:"));
+        fila.add(selectorDisco);
+        fila.add(new JLabel("Modo:"));
+        fila.add(selectorModo);
+        fila.add(etiquetaModo);
+        mostrarModo();
+    }
+
+    /** Usuario activo según el selector de modo (en el Proyecto 1, siempre el administrador). */
+    @Override
+    public Usuario actual() {
+        Object elegido = selectorModo.getSelectedItem();
+        if (elegido instanceof String texto && texto.startsWith(PREFIJO_USUARIO)) {
+            return Usuario.comun(texto.substring(PREFIJO_USUARIO.length()));
+        }
+        return Usuario.ADMIN;
+    }
+
+    /** Sincroniza los selectores con la foto: política de disco vigente y usuarios conocidos (dueños de archivos). */
+    public void mostrarDisco(PoliticaDiscoTipo politica, String[] conocidos) {
+        if (!proyecto2) {
+            return;
+        }
+        sincronizando = true;
+        if (politica != null && selectorDisco.getSelectedItem() != politica && !selectorDisco.isPopupVisible()) {
+            selectorDisco.setSelectedItem(politica);
+        }
+        if (conocidos != null && !mismos(conocidos, usuarios) && !selectorModo.isPopupVisible()) {
+            Object antes = selectorModo.getSelectedItem();
+            usuarios = conocidos.clone();
+            selectorModo.removeAllItems();
+            selectorModo.addItem(TEXTO_ADMIN);
+            for (String u : usuarios) {
+                selectorModo.addItem(PREFIJO_USUARIO + u);
+            }
+            selectorModo.setSelectedItem(antes == null ? TEXTO_ADMIN : antes);
+            if (selectorModo.getSelectedIndex() < 0) {
+                selectorModo.setSelectedIndex(0);
+            }
+        }
+        sincronizando = false;
+        mostrarModo();
+    }
+
+    /** Etiqueta de color con el modo activo. */
+    private void mostrarModo() {
+        Usuario u = actual();
+        etiquetaModo.setText(u.esAdmin() ? "MODO ADMINISTRADOR" : "MODO USUARIO: " + u.nombre());
+        etiquetaModo.setBackground(u.esAdmin() ? ColoresEstado.AZUL : ColoresEstado.NARANJA);
+    }
+
+    private static boolean mismos(String[] a, String[] b) {
+        if (a.length != b.length) {
+            return false;
+        }
+        for (int i = 0; i < a.length; i++) {
+            if (!a[i].equals(b[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Pide a la ventana que cargue otros JSON (Proyecto 2). */
+    private void cargarJSON() {
+        if (SwingUtilities.getWindowAncestor(this) instanceof VentanaPrincipal ventana) {
+            ventana.cargarJSON();
+        }
+    }
+
+    /** Pide la ruta y guarda el sistema de archivos actual con el formato del enunciado (Proyecto 2). */
+    private void guardarSistemaArchivos() {
+        cluster.formularioAbierto(true);
+        try {
+            java.io.File archivo = SelectorConfiguracion.elegirParaGuardarSistemaArchivos(this);
+            if (archivo == null) {
+                return;
+            }
+            avilaos.cluster.Computador pc = cluster.getComputador(0);
+            if (avilaos.config.ArchivoSistemaArchivos.guardar(pc.getSistemaArchivos(), pc.getDisco(), archivo.getPath())) {
+                errorCampos.exito("Sistema de archivos guardado: " + archivo.getName());
+            } else {
+                SelectorConfiguracion.error(this, "Guardar sistema de archivos", "No se pudo guardar en " + archivo.getPath());
+            }
+        } finally {
+            cluster.formularioAbierto(false);
+        }
     }
 
     /** Muestra el ciclo recibido. */

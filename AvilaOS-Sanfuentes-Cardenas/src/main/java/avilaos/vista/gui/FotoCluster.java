@@ -1,6 +1,8 @@
 package avilaos.vista.gui;
 
 import avilaos.cluster.Cluster;
+import avilaos.cluster.Computador;
+import avilaos.metricas.MetricasDisco;
 import avilaos.estructuras.ListaEnlazada;
 import avilaos.estructuras.Nodo;
 import avilaos.log.Debug;
@@ -11,13 +13,19 @@ import avilaos.metricas.MetricasBuffer;
 import avilaos.so.PCB;
 import avilaos.sync.Buffer;
 
-/** Foto inmutable del clúster en un ciclo: computadores, buffers, métricas, puntos del gráfico y las últimas líneas del log y de la consola. */
+/**
+ * Foto inmutable del clúster en un ciclo: computadores, buffers, métricas, puntos del gráfico, las últimas líneas del log y
+ * de la consola y, en el Proyecto 2, el disco, el sistema de archivos y las métricas del disco (estas solo cada cierto
+ * número de ciclos o con el reloj quieto, porque copian toda la serie).
+ */
 public record FotoCluster(long ciclo, FotoComputador[] computadores, FilaBuffer[] buffers, String[] log,
-        String[] consola, Metricas[] metricas, MetricasBuffer[] metricasBuffers, SerieGrafico[] series) {
+        String[] consola, Metricas[] metricas, MetricasBuffer[] metricasBuffers, SerieGrafico[] series,
+        FotoDisco disco, FotoArchivos archivos, MetricasDisco metricasDisco) {
 
     public static final int LINEAS_LOG = 500;
     public static final int LINEAS_CONSOLA = 1000;
     public static final int PUNTOS_GRAFICO = 1000;
+    public static final int CICLOS_ENTRE_METRICAS_DISCO = 10;
 
     /** Toma la foto del clúster en este instante. */
     public static FotoCluster de(Cluster cluster) {
@@ -34,9 +42,20 @@ public record FotoCluster(long ciclo, FotoComputador[] computadores, FilaBuffer[
             buffers[i] = FilaBuffer.de(b.estado(), FilaBuffer.usuarios(b.getNombre(), b.getAnfitrion(), procesos));
             nodo = nodo.getSiguiente();
         }
-        return new FotoCluster(cluster.getReloj().getCiclo(), fotos, buffers,
+        long ciclo = cluster.getReloj().getCiclo();
+        Computador primero = cluster.getComputador(0);
+        boolean quieto = !cluster.getReloj().isEjecutando() || cluster.getReloj().isPausado();
+        MetricasDisco metricasDisco = primero.getDisco() != null && (quieto || ciclo % CICLOS_ENTRE_METRICAS_DISCO == 0)
+                ? cluster.getMetricasDisco() : null;
+        return new FotoCluster(ciclo, fotos, buffers,
                 cluster.getLog().copiarUltimos(LINEAS_LOG), Debug.getConsola().copiarUltimos(LINEAS_CONSOLA),
-                metricas(cluster), metricasBuffers(cluster), series(cluster));
+                metricas(cluster), metricasBuffers(cluster), series(cluster), FotoDisco.de(primero, ciclo),
+                FotoArchivos.de(primero.getSistemaArchivos()), metricasDisco);
+    }
+
+    /** Indica si es una foto del Proyecto 2 (computador con disco y sistema de archivos). */
+    public boolean conDisco() {
+        return disco != null;
     }
 
     /** Métricas de cada computador y, al final, las del clúster completo. */

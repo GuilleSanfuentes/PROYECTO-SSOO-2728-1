@@ -5,7 +5,7 @@ import avilaos.cluster.Computador;
 import avilaos.enums.EstadoProceso;
 import avilaos.estructuras.ListaEnlazada;
 import avilaos.estructuras.Nodo;
-import avilaos.hardware.CPU;
+import avilaos.so.ResumenComputador;
 import avilaos.so.ResumenProceso;
 import avilaos.sync.Buffer;
 import avilaos.sync.EstadoBuffer;
@@ -19,44 +19,42 @@ public final class CalculadorMetricas {
     /** Métricas de un computador: sus procesos y los contadores de su CPU. */
     public static Metricas computador(Cluster cluster, int numero) {
         Computador c = cluster.getComputador(numero);
-        CPU cpu = c.getCpu();
         long ciclo = cluster.getReloj().getCiclo();
-        return calcular(c.getNombre(), c.getKernel().getResumenes(ciclo), cpu.getCiclosUsuario(), cpu.getCiclosSO(),
-                cpu.getCiclosOciosos(), ciclo);
+        ResumenComputador foto = c.getKernel().getResumen(ciclo);
+        return calcular(c.getNombre(), foto.procesos(), foto.ciclosUsuario(), foto.ciclosSO(), foto.ciclosOciosos(), ciclo);
     }
 
     /** Métricas de todo el clúster: todos los procesos y la suma de los contadores de todas las CPUs. */
     public static Metricas global(Cluster cluster) {
+        long ciclo = cluster.getReloj().getCiclo();
+        ResumenComputador foto = resumenCluster(cluster, ciclo);
+        return calcular("Clúster", foto.procesos(), foto.ciclosUsuario(), foto.ciclosSO(), foto.ciclosOciosos(), ciclo);
+    }
+
+    /** Suma las fotos de todos los computadores, cada uno copiado bajo su propio mutex. */
+    private static ResumenComputador resumenCluster(Cluster cluster, long ciclo) {
+        ListaEnlazada<ResumenProceso> todos = new ListaEnlazada<>();
         long usuario = 0;
         long so = 0;
         long ociosos = 0;
         for (int i = 0; i < cluster.cantidadComputadores(); i++) {
-            CPU cpu = cluster.getComputador(i).getCpu();
-            usuario += cpu.getCiclosUsuario();
-            so += cpu.getCiclosSO();
-            ociosos += cpu.getCiclosOciosos();
-        }
-        long ciclo = cluster.getReloj().getCiclo();
-        return calcular("Clúster", resumenes(cluster, ciclo), usuario, so, ociosos, ciclo);
-    }
-
-    /** Fotos de los procesos de todos los computadores, cada computador copiado bajo su propio mutex. */
-    private static ListaEnlazada<ResumenProceso> resumenes(Cluster cluster, long ciclo) {
-        ListaEnlazada<ResumenProceso> todos = new ListaEnlazada<>();
-        for (int i = 0; i < cluster.cantidadComputadores(); i++) {
-            Nodo<ResumenProceso> nodo = cluster.getComputador(i).getKernel().getResumenes(ciclo).getCabeza();
+            ResumenComputador foto = cluster.getComputador(i).getKernel().getResumen(ciclo);
+            Nodo<ResumenProceso> nodo = foto.procesos().getCabeza();
             while (nodo != null) {
                 todos.agregarFinal(nodo.getDato());
                 nodo = nodo.getSiguiente();
             }
+            usuario += foto.ciclosUsuario();
+            so += foto.ciclosSO();
+            ociosos += foto.ciclosOciosos();
         }
-        return todos;
+        return new ResumenComputador(todos, usuario, so, ociosos);
     }
 
     /** Una fila por buffer: elementos producidos y consumidos y tiempo promedio que sus procesos pasaron bloqueados en semáforos. */
     public static ListaEnlazada<MetricasBuffer> buffers(Cluster cluster) {
         ListaEnlazada<MetricasBuffer> filas = new ListaEnlazada<>();
-        ListaEnlazada<ResumenProceso> procesos = resumenes(cluster, cluster.getReloj().getCiclo());
+        ListaEnlazada<ResumenProceso> procesos = resumenCluster(cluster, cluster.getReloj().getCiclo()).procesos();
         Nodo<Buffer> nodo = cluster.getBuffers().copiar().getCabeza();
         while (nodo != null) {
             EstadoBuffer e = nodo.getDato().estado();
