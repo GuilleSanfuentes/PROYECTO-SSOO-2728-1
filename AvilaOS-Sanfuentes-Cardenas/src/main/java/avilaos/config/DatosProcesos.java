@@ -11,6 +11,12 @@ public record DatosProcesos(boolean cargable, int duracionCicloMs, int bloquesSw
         int velocidadCabezal, int ciclosAnticipacion, Boolean debugger, int ram,PoliticaTipo politica, int quantum,
         ListaEnlazada<DatosBuffer> buffers, ListaEnlazada<DatosProcesoArchivo> procesos, ListaEnlazada<String> problemas) {
 
+    /** La misma carga con otra política de disco y sin tocar el debugger. */
+    public DatosProcesos paraComparar(PoliticaDiscoTipo otra) {
+        return new DatosProcesos(cargable, duracionCicloMs, bloquesSwap, otra, velocidadCabezal, ciclosAnticipacion, null, ram,
+                politica, quantum, buffers, procesos, problemas);
+    }
+
     /** Quantum que usa el planificador: el 0 admitido sin Round Robin se cambia por el de por defecto. */
     public int quantumInterno() {
         return quantum == 0 ? ConfiguracionSistema.DEF_QUANTUM : quantum;
