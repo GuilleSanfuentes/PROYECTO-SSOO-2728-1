@@ -9,6 +9,7 @@ import avilaos.hardware.DiscoSD;
 import avilaos.log.Debug;
 import avilaos.log.LogEventos;
 import avilaos.metricas.CambioPolitica;
+import avilaos.metricas.MetricasDisco;
 import avilaos.metricas.PuntoDesplazamiento;
 import avilaos.metricas.SerieDesplazamiento;
 import avilaos.so.disco.politicas.FabricaPoliticasDisco;
@@ -432,6 +433,34 @@ public class PlanificadorDisco implements ControladorDisco {
             mutex.release();
         }
         return copia;
+    }
+
+    /** Foto de todas las métricas bajo un solo mutex; los contadores de suspensión los aporta quien la pide. */
+    public MetricasDisco fotografiar(long suspensiones, long reactivaciones) {
+        mutex.acquireUninterruptibly();
+        try {
+            CambioPolitica[] copiaCambios = new CambioPolitica[cambios.tamano()];
+            Nodo<CambioPolitica> nodo = cambios.getCabeza();
+            for (int i = 0; i < copiaCambios.length; i++) {
+                copiaCambios[i] = nodo.getDato();
+                nodo = nodo.getSiguiente();
+            }
+            return new MetricasDisco(ultimoCicloDisco, politica.getTipo(), disco.getDesplazamientoTotal(), atendidas,
+                    atendidasPorPolitica, atendidas + (actual != null ? 1 : 0), promedio(esperaTotal),
+                    promedio(esperaTotal - esperaAnticipadaTotal), suspensiones, reactivaciones, serie.copiar(), copiaCambios);
+        } finally {
+            mutex.release();
+        }
+    }
+
+    /** La última solicitud terminada, o null si todavía no hay ninguna. */
+    public SolicitudDisco getUltimaAtendida() {
+        mutex.acquireUninterruptibly();
+        try {
+            return historial.ultimo();
+        } finally {
+            mutex.release();
+        }
     }
 
     /** Reparte una suma entre las solicitudes que ya empezaron a atenderse (con el mutex tomado). */

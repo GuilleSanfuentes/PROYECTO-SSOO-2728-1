@@ -14,6 +14,7 @@ import avilaos.hardware.ObservadorReloj;
 import avilaos.hardware.Reloj;
 import avilaos.log.Debug;
 import avilaos.log.LogEventos;
+import avilaos.metricas.MetricasDisco;
 import avilaos.metricas.RegistroUtilizacion;
 import avilaos.so.DatosProceso;
 import avilaos.so.DatosProcesoArchivo;
@@ -578,6 +579,11 @@ public class Cluster implements ObservadorReloj {
     /** Indica si en el último ciclo todos los computadores estaban sin procesos y ociosos. */
     public boolean isInactivo() {
         return inactivo;
+    }
+
+    /** Métricas del disco y de la suspensión en este instante, o null en el modo del Proyecto 1 (sin disco). */
+    public MetricasDisco getMetricasDisco() {
+        return computadores[0].getKernel().getMetricasDisco();
     }
 
     /** Registro con los buffers creados en el clúster. */
