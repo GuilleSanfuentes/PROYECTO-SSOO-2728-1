@@ -20,10 +20,13 @@ import avilaos.sync.DatosBuffer;
 import avilaos.sync.EstadoBuffer;
 import avilaos.vista.gui.FotoCluster;
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 /** Pruebas de robustez: todas las políticas local y remoto, escenarios aleatorios, concurrencia, archivos dañados y bordes. */
 public final class PruebasPaso10 {
@@ -33,6 +36,8 @@ public final class PruebasPaso10 {
     private static final int MUTACIONES_JSON = 300;
     private static Resultados r;
     private static LogEventos log;
+    private static boolean debuggerConfigurado;
+    private static final AtomicReference<String> trazas = new AtomicReference<>("");
 
     private PruebasPaso10() {
     }
@@ -42,6 +47,7 @@ public final class PruebasPaso10 {
         log = logEventos;
         r = new Resultados(10, "Etapa 10: robustez (políticas, aleatorios, concurrencia, archivos dañados y bordes)");
         boolean dl = Debug.isActivo();
+        debuggerConfigurado = dl;
         Debug.setActivo(false);
         try {
             probarTodasLasPoliticasLocalYRemoto();
@@ -209,6 +215,7 @@ public final class PruebasPaso10 {
         unir(creador);
         unir(cambiador);
         unir(lector);
+        imprimirTrazas(debuggerConfigurado);
         long limite = System.currentTimeMillis() + 30000;
         while (!c.todosTerminados() && System.currentTimeMillis() < limite) {
             dormir(20);
@@ -517,12 +524,26 @@ public final class PruebasPaso10 {
         return sb.toString();
     }
 
+    /** Imprime las trazas guardadas por los hilos, usando el debugger según la configuración y sin contar ERROR. */
+    private static void imprimirTrazas(boolean debugger) {
+        String guardadas = trazas.getAndSet("");
+        if (guardadas.isEmpty()) {
+            return;
+        }
+        Debug.setActivo(debugger);
+        Debug.bloque("TRAZA DE LAS EXCEPCIONES EN LOS HILOS DE PRUEBA:\n" + guardadas);
+        Debug.setActivo(false);
+    }
+
     private static Thread hilo(AtomicInteger excepciones, Runnable trabajo) {
         Thread t = new Thread(() -> {
             try {
                 trabajo.run();
             } catch (RuntimeException e) {
                 excepciones.incrementAndGet();
+                StringWriter texto = new StringWriter();
+                e.printStackTrace(new PrintWriter(texto));
+                trazas.accumulateAndGet(texto.toString(), String::concat);
             }
         });
         t.setDaemon(true);

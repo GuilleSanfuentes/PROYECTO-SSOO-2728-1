@@ -2,6 +2,8 @@ package avilaos.so;
 
 import avilaos.enums.EstadoProceso;
 import avilaos.enums.MotivoBloqueo;
+import avilaos.enums.TipoInterrupcion;
+import avilaos.enums.TipoOperacionES;
 import avilaos.enums.TipoProceso;
 import avilaos.log.Debug;
 import avilaos.so.programas.Instruccion;
@@ -12,6 +14,8 @@ import avilaos.so.programas.Programa;
  * No es seguro entre hilos: lo sincroniza el kernel de su computador.
  */
 public class PCB {
+
+    public static final int SIN_SWAP = -1;
 
     private static final String ORIGEN = "PCB";
 
@@ -43,6 +47,13 @@ public class PCB {
     private SolicitudPendiente solicitudPendiente;
     private boolean vencidoEnDisco;
     private String motivoRechazo;
+    private long cicloInicioBloqueo = -1;
+    private long cicloListoSuspendido = -1;
+    private boolean ocupaRam;
+    private int bloqueSwap = SIN_SWAP;
+    private TipoOperacionES intercambio;
+    private int idIntercambio;
+    private TipoInterrupcion eventoEnTransito;
 
     /** Crea el PCB en estado Nuevo. Usar FabricaProcesos, que valida los datos. */
     PCB(int id, String nombre, TipoProceso tipo, Programa programa, int memoria, int prioridad,
@@ -80,7 +91,8 @@ public class PCB {
 
     /** Instrucción a la que apunta el Contador, o null si el programa terminó. */
     public Instruccion instruccionActual() {
-        return programaTerminado() ? null : programa.instruccionEn(contador);
+        int actual = contador;
+        return actual >= programa.totalInstrucciones() ? null : programa.instruccionEn(actual);
     }
 
     /** Avanza Contador y MAR una posición tras ejecutar una instrucción. */
@@ -117,11 +129,102 @@ public class PCB {
         }
         return switch (hacia) {
             case NUEVO -> false;
-            case LISTO -> desde == EstadoProceso.NUEVO || desde == EstadoProceso.EJECUCION || desde == EstadoProceso.BLOQUEADO;
+            case LISTO -> desde == EstadoProceso.NUEVO || desde == EstadoProceso.EJECUCION || desde == EstadoProceso.BLOQUEADO
+                    || desde == EstadoProceso.LISTO_SUSPENDIDO;
             case EJECUCION -> desde == EstadoProceso.LISTO;
             case BLOQUEADO -> desde == EstadoProceso.EJECUCION;
+            case BLOQUEADO_SUSPENDIDO -> desde == EstadoProceso.BLOQUEADO;
+            case LISTO_SUSPENDIDO -> desde == EstadoProceso.BLOQUEADO_SUSPENDIDO;
             case TERMINADO -> true;
         };
+    }
+
+    /** Sale de la RAM estando bloqueado; conserva el motivo de su bloqueo. */
+    public boolean suspender() {
+        return cambiarEstado(EstadoProceso.BLOQUEADO_SUSPENDIDO);
+    }
+
+    /** Ocurre el evento que esperaba un Bloqueado/Suspendido: pasa a Listo/Suspendido. */
+    public boolean ocurrirEventoSuspendido(long ciclo) {
+        if (!cambiarEstado(EstadoProceso.LISTO_SUSPENDIDO)) {
+            return false;
+        }
+        acumularBloqueoSemaforo(ciclo);
+        motivoBloqueo = MotivoBloqueo.NINGUNO;
+        detalleBloqueo = "";
+        cicloListoSuspendido = ciclo;
+        return true;
+    }
+
+    /** Vuelve a la RAM desde Listo/Suspendido. */
+    public boolean reactivar() {
+        if (estado != EstadoProceso.LISTO_SUSPENDIDO) {
+            Debug.error(ORIGEN, getEtiqueta() + " reactivar estando en " + estado.getNombre());
+            return false;
+        }
+        ciclosEsperandoEnListos = 0;
+        return cambiarEstado(EstadoProceso.LISTO);
+    }
+
+    /** Indica si su memoria está reservada en la RAM. */
+    public boolean ocupaRam() {
+        return ocupaRam;
+    }
+
+    void setOcupaRam(boolean ocupa) {
+        this.ocupaRam = ocupa;
+    }
+
+    /** Primer bloque de su imagen en el swap, o SIN_SWAP. */
+    public int getBloqueSwap() {
+        return bloqueSwap;
+    }
+
+    void setBloqueSwap(int bloque) {
+        this.bloqueSwap = bloque;
+    }
+
+    /** SUSPENDER o REACTIVAR mientras esa solicitud no termine; null si no hay intercambio en curso. */
+    public TipoOperacionES getIntercambio() {
+        return intercambio;
+    }
+
+    /** Número de la solicitud de intercambio en curso. */
+    public int getIdIntercambio() {
+        return idIntercambio;
+    }
+
+    /** Anota el intercambio pedido al disco; null cuando termina o se cancela. */
+    void setIntercambio(TipoOperacionES operacion, int idSolicitud) {
+        this.intercambio = operacion;
+        this.idIntercambio = idSolicitud;
+        this.eventoEnTransito = null;
+    }
+
+    /** Indica si su evento ocurrió mientras el disco lo escribía en el swap. */
+    public boolean isEventoEnTransito() {
+        return eventoEnTransito != null;
+    }
+
+    /** El evento que ocurrió mientras se escribía, o null. */
+    public TipoInterrupcion getEventoEnTransito() {
+        return eventoEnTransito;
+    }
+
+    /** El evento ya ocurrió: dejará de esperar cuando acabe de escribirse. */
+    void marcarEventoEnTransito(TipoInterrupcion evento) {
+        this.eventoEnTransito = evento;
+        this.detalleBloqueo = "evento ocurrido; termina de escribirse en el swap";
+    }
+
+    /** Ciclo en que empezó su último bloqueo, o -1 si nunca se bloqueó. */
+    public long getCicloInicioBloqueo() {
+        return cicloInicioBloqueo;
+    }
+
+    /** Ciclo en que pasó a Listo/Suspendido, o -1 si nunca estuvo así. */
+    public long getCicloListoSuspendido() {
+        return cicloListoSuspendido;
     }
 
     /** Pasa a Bloqueado con su motivo; detalle describe qué espera (ej. "semáforo 'vacío' de B1"). */
@@ -135,6 +238,7 @@ public class PCB {
         }
         motivoBloqueo = motivo;
         detalleBloqueo = detalle == null ? "" : detalle;
+        cicloInicioBloqueo = ciclo;
         if (motivo == MotivoBloqueo.SEMAFORO) {
             cicloInicioBloqueoSemaforo = ciclo;
         }
@@ -372,8 +476,8 @@ public class PCB {
     public String toString() {
         String texto = getEtiqueta() + " '" + nombre + "' [" + estado.getNombre() + "] prio=" + prioridadEfectiva
                 + " dl=" + deadlineRestante + " Contador=" + contador + "/" + programa.totalInstrucciones();
-        if (estado == EstadoProceso.BLOQUEADO) {
-            texto += " (" + motivoBloqueo.getNombre() + (detalleBloqueo.isEmpty() ? "" : ": " + detalleBloqueo) + ")";
+        if (estado == EstadoProceso.BLOQUEADO || estado == EstadoProceso.BLOQUEADO_SUSPENDIDO) {
+            texto +=" (" + motivoBloqueo.getNombre() + (detalleBloqueo.isEmpty() ? "" : ": " + detalleBloqueo) + ")";
         }
         return texto;
     }
