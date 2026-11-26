@@ -2,6 +2,7 @@ package avilaos.so;
 
 import avilaos.enums.EstadoProceso;
 import avilaos.enums.MotivoBloqueo;
+import avilaos.enums.TipoOperacionES;
 import avilaos.enums.TipoProceso;
 import avilaos.log.Debug;
 import avilaos.so.programas.Instruccion;
@@ -12,6 +13,8 @@ import avilaos.so.programas.Programa;
  * No es seguro entre hilos: lo sincroniza el kernel de su computador.
  */
 public class PCB {
+
+    public static final int SIN_SWAP = -1;
 
     private static final String ORIGEN = "PCB";
 
@@ -45,6 +48,11 @@ public class PCB {
     private String motivoRechazo;
     private long cicloInicioBloqueo = -1;
     private long cicloListoSuspendido = -1;
+    private boolean ocupaRam;
+    private int bloqueSwap = SIN_SWAP;
+    private TipoOperacionES intercambio;
+    private int idIntercambio;
+    private boolean eventoEnTransito;
 
     /** Crea el PCB en estado Nuevo. Usar FabricaProcesos, que valida los datos. */
     PCB(int id, String nombre, TipoProceso tipo, Programa programa, int memoria, int prioridad,
@@ -154,6 +162,52 @@ public class PCB {
         }
         ciclosEsperandoEnListos = 0;
         return cambiarEstado(EstadoProceso.LISTO);
+    }
+
+    /** Indica si su memoria está reservada en la RAM. */
+    public boolean ocupaRam() {
+        return ocupaRam;
+    }
+
+    void setOcupaRam(boolean ocupa) {
+        this.ocupaRam = ocupa;
+    }
+
+    /** Primer bloque de su imagen en el swap, o SIN_SWAP. */
+    public int getBloqueSwap() {
+        return bloqueSwap;
+    }
+
+    void setBloqueSwap(int bloque) {
+        this.bloqueSwap = bloque;
+    }
+
+    /** SUSPENDER o REACTIVAR mientras esa solicitud no termine; null si no hay intercambio en curso. */
+    public TipoOperacionES getIntercambio() {
+        return intercambio;
+    }
+
+    /** Número de la solicitud de intercambio en curso. */
+    public int getIdIntercambio() {
+        return idIntercambio;
+    }
+
+    /** Anota el intercambio pedido al disco; null cuando termina o se cancela. */
+    void setIntercambio(TipoOperacionES operacion, int idSolicitud) {
+        this.intercambio = operacion;
+        this.idIntercambio = idSolicitud;
+        this.eventoEnTransito = false;
+    }
+
+    /** Indica si su evento ocurrió mientras el disco lo escribía en el swap. */
+    public boolean isEventoEnTransito() {
+        return eventoEnTransito;
+    }
+
+    /** El evento ya ocurrió: dejará de esperar cuando acabe de escribirse. */
+    void marcarEventoEnTransito() {
+        this.eventoEnTransito = true;
+        this.detalleBloqueo = "evento ocurrido; termina de escribirse en el swap";
     }
 
     /** Ciclo en que empezó su último bloqueo, o -1 si nunca se bloqueó. */
