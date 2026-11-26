@@ -1,8 +1,10 @@
 package avilaos.cluster;
 
 import avilaos.config.ConfigComputador;
+import avilaos.config.ConfigDisco;
 import avilaos.hardware.CPU;
 import avilaos.hardware.DMA;
+import avilaos.hardware.DiscoSD;
 import avilaos.hardware.LineaInterrupciones;
 import avilaos.hardware.RAM;
 import avilaos.hardware.Reloj;
@@ -11,8 +13,11 @@ import avilaos.log.Debug;
 import avilaos.log.LogEventos;
 import avilaos.so.Kernel;
 import avilaos.so.Planificador;
+import avilaos.so.archivos.SistemaArchivos;
+import avilaos.so.disco.AsignadorBloques;
+import avilaos.so.disco.PlanificadorDisco;
 
-/** Unidad reutilizable del clúster: ensambla su hardware (CPU, RAM, DMA, red) y su núcleo del SO. */
+/** Unidad reutilizable del clúster: ensambla su hardware (CPU, RAM, DMA, red y disco opcional) y su núcleo del SO. */
 public class Computador {
 
     private final int id;
@@ -23,9 +28,19 @@ public class Computador {
     private final DMA dma;
     private final TarjetaRed red;
     private final Kernel kernel;
+    private final DiscoSD disco;
+    private final AsignadorBloques asignador;
+    private final PlanificadorDisco planificadorDisco;
+    private final SistemaArchivos sistemaArchivos;
 
-    /** Crea el computador con su configuración; el kernel queda conectado a la CPU. */
+    /** Crea el computador sin disco (modo del Proyecto 1). */
     public Computador(int id, ConfigComputador config, int envejecimientoCadaCiclos, LogEventos log) {
+        this(id, config, envejecimientoCadaCiclos, log, null);
+    }
+
+    /** Crea el computador con su configuración y, si se indica, su disco; el kernel queda conectado a la CPU. */
+    public Computador(int id, ConfigComputador config, int envejecimientoCadaCiclos, LogEventos log,
+            ConfigDisco configDisco) {
         this.id = id;
         this.nombre = "Computador " + id;
         String sufijo = "-PC" + id;
@@ -37,13 +52,28 @@ public class Computador {
         Planificador planificador = new Planificador("Planif" + sufijo, config.politica(), config.quantum());
         this.kernel = new Kernel(id, cpu, ram, dma, planificador, envejecimientoCadaCiclos, log);
         cpu.conectarSistemaOperativo(kernel);
+        if (configDisco == null) {
+            this.disco = null;
+            this.asignador = null;
+            this.planificadorDisco = null;
+            this.sistemaArchivos = null;
+        } else {
+            this.disco = new DiscoSD("SD" + sufijo, configDisco.bloquesArchivos(), configDisco.bloquesSwap(),
+                    configDisco.cabezalInicial(), configDisco.velocidad());
+            this.asignador = new AsignadorBloques("Asignador" + sufijo, disco);
+            this.planificadorDisco = new PlanificadorDisco("PlanifDisco" + sufijo, disco, configDisco.politica(), log);
+            this.sistemaArchivos = new SistemaArchivos("FS" + sufijo, asignador);
+        }
         Debug.ok(nombre, "ensamblado: RAM " + ram.getCapacidad() + ", " + planificador.describir());
     }
 
-    /** Conecta DMA y red a la fase de E/S y la CPU a la fase de CPU del reloj global. */
+    /** Conecta DMA, red y disco a la fase de E/S y la CPU a la fase de CPU del reloj global. */
     public void conectar(Reloj reloj, int faseES, int faseCPU) {
         reloj.agregarComponente(faseES, dma);
         reloj.agregarComponente(faseES, red);
+        if (disco != null) {
+            reloj.agregarComponente(faseES, disco);
+        }
         reloj.agregarComponente(faseCPU, cpu);
     }
 
@@ -83,5 +113,25 @@ public class Computador {
 
     public Kernel getKernel() {
         return kernel;
+    }
+
+    /** Disco local, o null en el modo del Proyecto 1. */
+    public DiscoSD getDisco() {
+        return disco;
+    }
+
+    /** Asignador de bloques del disco, o null si no hay disco. */
+    public AsignadorBloques getAsignador() {
+        return asignador;
+    }
+
+    /** Planificador del disco, o null si no hay disco. */
+    public PlanificadorDisco getPlanificadorDisco() {
+        return planificadorDisco;
+    }
+
+    /** Sistema de archivos del disco, o null si no hay disco. */
+    public SistemaArchivos getSistemaArchivos() {
+        return sistemaArchivos;
     }
 }

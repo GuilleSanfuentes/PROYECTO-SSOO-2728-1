@@ -3,6 +3,7 @@ package avilaos.cluster;
 import avilaos.config.ArchivoConfiguracion;
 import avilaos.config.CondicionesParada;
 import avilaos.config.ConfigComputador;
+import avilaos.config.ConfigDisco;
 import avilaos.config.ConfiguracionSistema;
 import avilaos.enums.PoliticaTipo;
 import avilaos.estructuras.ListaEnlazada;
@@ -45,6 +46,16 @@ public class Cluster implements ObservadorReloj {
 
     /** Arma el clúster según la configuración: un reloj, N computadores y sus hilos. */
     public Cluster(ConfiguracionSistema config, LogEventos log) {
+        this(config, log, null);
+    }
+
+    /** Arma el clúster; con disco (modo del Proyecto 2) exige exactamente un computador. */
+    public Cluster(ConfiguracionSistema config, LogEventos log, ConfigDisco disco) {
+        if (disco != null && config.getComputadores().tamano() != 1) {
+            String motivo = "con disco debe haber exactamente 1 computador (hay " + config.getComputadores().tamano() + ")";
+            Debug.error(ORIGEN, motivo);
+            throw new IllegalArgumentException(motivo);
+        }
         this.config = config;
         this.log = log;
         this.parada = config.getParada();
@@ -56,7 +67,7 @@ public class Cluster implements ObservadorReloj {
         this.computadores = new Computador[config.getComputadores().tamano()];
         Nodo<ConfigComputador> nodo = config.getComputadores().getCabeza();
         for (int i = 0; i < computadores.length; i++) {
-            computadores[i] = new Computador(i, nodo.getDato(), config.getEnvejecimientoCadaCiclos(), log);
+            computadores[i] = new Computador(i, nodo.getDato(), config.getEnvejecimientoCadaCiclos(), log, disco);
             computadores[i].conectar(reloj, faseES, faseCPU);
             nodo = nodo.getSiguiente();
         }
