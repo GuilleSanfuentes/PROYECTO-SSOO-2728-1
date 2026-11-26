@@ -35,6 +35,7 @@ public class PlanificadorDisco implements ControladorDisco {
     private final long[] atendidasPorPolitica = new long[PoliticaDiscoTipo.values().length];
     private PoliticaDisco politica;
     private SolicitudDisco actual;
+    private PoliticaDiscoTipo politicaDeActual;
     private int indiceBloque;
     private int siguienteId = 1;
     private long atendidas;
@@ -211,6 +212,7 @@ public class PlanificadorDisco implements ControladorDisco {
             }
             if (parada.esAtencion()) {
                 actual = parada.solicitud();
+                politicaDeActual = politica.getTipo();
                 cola.eliminar(actual);
                 indiceBloque = 0;
                 esperaTotal += ciclo - actual.cicloLlegada();
@@ -236,7 +238,7 @@ public class PlanificadorDisco implements ControladorDisco {
     /** Cuenta la solicitud terminada y la pasa al historial (con el mutex tomado). */
     private void cerrarActual() {
         atendidas++;
-        atendidasPorPolitica[politica.getTipo().ordinal()]++;
+        atendidasPorPolitica[politicaDeActual.ordinal()]++;
         historial.agregarFinal(actual);
         if (historial.tamano() > HISTORIAL_MAXIMO) {
             historial.eliminarEn(0);
@@ -360,7 +362,7 @@ public class PlanificadorDisco implements ControladorDisco {
         }
     }
 
-    /** Solicitudes terminadas mientras estuvo activa la política indicada. */
+    /** Solicitudes terminadas que eligió la política indicada, aunque hayan acabado después de cambiarla. */
     public long getAtendidasPor(PoliticaDiscoTipo tipo) {
         mutex.acquireUninterruptibly();
         try {
