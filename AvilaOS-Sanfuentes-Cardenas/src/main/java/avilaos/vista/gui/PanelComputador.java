@@ -57,10 +57,14 @@ public class PanelComputador extends JPanel {
     private final TablaProcesos tablaListos = new TablaProcesos(false);
     private final TablaProcesos tablaBloqueados = new TablaProcesos(true);
     private final TablaProcesos tablaTerminados = new TablaProcesos(false);
+    private final TablaProcesos tablaListosSuspendidos = new TablaProcesos(false);
+    private final TablaProcesos tablaBloqueadosSuspendidos = new TablaProcesos(true);
     private final JLabel cuentaNuevos = new JLabel();
     private final JLabel cuentaListos = new JLabel();
     private final JLabel cuentaBloqueados = new JLabel();
     private final JLabel cuentaTerminados = new JLabel();
+    private final JLabel cuentaListosSuspendidos = new JLabel();
+    private final JLabel cuentaBloqueadosSuspendidos = new JLabel();
     private FilaProceso enCPU;
     private DialogoPCB ficha;
 
@@ -88,6 +92,8 @@ public class PanelComputador extends JPanel {
         tablaListos.alHacerClic(this::abrirFicha);
         tablaBloqueados.alHacerClic(this::abrirFicha);
         tablaTerminados.alHacerClic(this::abrirFicha);
+        tablaListosSuspendidos.alHacerClic(this::abrirFicha);
+        tablaBloqueadosSuspendidos.alHacerClic(this::abrirFicha);
         FiltroEntrada.soloDigitos(campoQuantum, String.valueOf(Planificador.QUANTUM_MAXIMO).length());
         botonQuantum.addActionListener(e -> aplicarQuantum());
         campoQuantum.addActionListener(e -> aplicarQuantum());
@@ -110,10 +116,17 @@ public class PanelComputador extends JPanel {
         arriba.add(alinear(tarjetaMemoria()));
         add(arriba, BorderLayout.NORTH);
 
-        JPanel colas = new JPanel(new GridLayout(4, 1, 0, 6));
+        boolean conDisco = cluster.getComputador(numero).getDisco() != null;
+        JPanel colas = new JPanel(new GridLayout(conDisco ? 6 : 4, 1, 0, 6));
         colas.add(seccion("Nuevos", EstadoProceso.NUEVO, tablaNuevos, cuentaNuevos));
         colas.add(seccion("Listos", EstadoProceso.LISTO, tablaListos, cuentaListos));
         colas.add(seccion("Bloqueados", EstadoProceso.BLOQUEADO, tablaBloqueados, cuentaBloqueados));
+        if (conDisco) {
+            colas.add(seccion("Listo/Suspendido", EstadoProceso.LISTO_SUSPENDIDO, tablaListosSuspendidos, cuentaListosSuspendidos));
+            colas.add(seccion("Bloqueado/Suspendido", EstadoProceso.BLOQUEADO_SUSPENDIDO, tablaBloqueadosSuspendidos,
+                    cuentaBloqueadosSuspendidos));
+            setPreferredSize(new Dimension(ANCHO, 900));
+        }
         colas.add(seccion("Terminados", EstadoProceso.TERMINADO, tablaTerminados, cuentaTerminados));
         add(colas, BorderLayout.CENTER);
     }
@@ -135,7 +148,8 @@ public class PanelComputador extends JPanel {
         } else {
             proceso.setText(p.etiqueta() + " " + p.nombre() + " (" + p.tipo().getNombre() + ")");
             datosPCB.setText("ID " + p.id() + " · Comp. " + p.computador() + " · " + p.estado().getNombre()
-                    + " · Mem " + p.memoria() + " · Restan " + p.restantes() + " instr.");
+                    + " · Mem " + p.memoria() + " · Restan " + p.restantes() + " instr."
+                    + (p.esDeArchivo() ? " · " + p.operacionES() : ""));
             registros.setText("Contador (PC): " + f.contadorCPU() + "    MAR: " + f.marCPU());
             prioridad.setText(p.prioridadTexto());
             barraProgreso.setDatos(p.total() > 0 ? (double) p.hechas() / p.total() : 0, ColoresEstado.VERDE,
@@ -175,6 +189,10 @@ public class PanelComputador extends JPanel {
         cuentaListos.setText(String.valueOf(f.listos().length));
         cuentaBloqueados.setText(String.valueOf(f.bloqueados().length));
         cuentaTerminados.setText(String.valueOf(f.terminados().length));
+        tablaListosSuspendidos.mostrar(f.listosSuspendidos());
+        tablaBloqueadosSuspendidos.mostrar(f.bloqueadosSuspendidos());
+        cuentaListosSuspendidos.setText(String.valueOf(f.listosSuspendidos().length));
+        cuentaBloqueadosSuspendidos.setText(String.valueOf(f.bloqueadosSuspendidos().length));
         actualizarFicha(f);
     }
 
@@ -192,25 +210,10 @@ public class PanelComputador extends JPanel {
         if (ficha == null || !ficha.isDisplayable()) {
             return;
         }
-        FilaProceso actual = buscar(ficha.getIdProceso(), f);
+        FilaProceso actual = f.buscar(ficha.getIdProceso());
         if (actual != null) {
             ficha.actualizar(actual);
         }
-    }
-
-    /** Busca el proceso por ID en la CPU y en las cuatro colas de la foto. */
-    private static FilaProceso buscar(int id, FotoComputador f) {
-        if (f.enCPU() != null && f.enCPU().id() == id) {
-            return f.enCPU();
-        }
-        for (FilaProceso[] cola : new FilaProceso[][]{f.nuevos(), f.listos(), f.bloqueados(), f.terminados()}) {
-            for (FilaProceso fila : cola) {
-                if (fila.id() == id) {
-                    return fila;
-                }
-            }
-        }
-        return null;
     }
 
     private JPanel tarjetaCPU() {

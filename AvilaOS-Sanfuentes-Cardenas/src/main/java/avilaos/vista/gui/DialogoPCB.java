@@ -36,6 +36,9 @@ public class DialogoPCB extends JDialog {
     private final JLabel fin = new JLabel();
     private final JLabel buffer = new JLabel();
     private final JLabel bloqueoSemaforo = new JLabel();
+    private final JLabel operacionES = new JLabel();
+    private final JLabel swap = new JLabel();
+    private final JLabel rechazo = new JLabel();
 
     /** Crea la ficha del proceso indicado y muestra sus datos actuales. */
     public DialogoPCB(Window duena, FilaProceso fila) {
@@ -69,6 +72,10 @@ public class DialogoPCB extends JDialog {
         f = fila(datos, f, "Llegada", llegada);
         f = fila(datos, f, "Primera ejecución", primera);
         f = fila(datos, f, "Fin", fin);
+        f = seccion(datos, f, "Disco y archivos");
+        f = fila(datos, f, "Operación de E/S", operacionES);
+        f = fila(datos, f, "Área de intercambio", swap);
+        f = fila(datos, f, "Rechazo", rechazo);
         f = seccion(datos, f, "Productor-consumidor");
         f = fila(datos, f, "Buffer", buffer);
         fila(datos, f, "Bloqueado en semáforos", bloqueoSemaforo);
@@ -128,6 +135,9 @@ public class DialogoPCB extends JDialog {
         fin.setText(p.cicloFin() < 0 ? "-" : String.valueOf(p.cicloFin()));
         buffer.setText(p.usaBuffer() ? p.buffer() + "   (" + p.elementosProcesados() + " de " + p.elementosObjetivo() + " elementos)" : "no usa buffer");
         bloqueoSemaforo.setText(p.usaBuffer() ? p.ciclosBloqueadoSemaforo() + " ciclos" : "-");
+        operacionES.setText(p.esDeArchivo() ? p.operacionES() : "no es un proceso de archivos");
+        swap.setText(p.bloqueSwap() >= 0 ? "en el swap desde el bloque " + p.bloqueSwap() : "en RAM (no está suspendido)");
+        rechazo.setText(p.rechazo().isEmpty() ? "-" : p.rechazo());
     }
 
     /** Agrega un título de sección y devuelve la siguiente fila libre. */

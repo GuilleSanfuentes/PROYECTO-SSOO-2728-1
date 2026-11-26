@@ -1,5 +1,6 @@
 package avilaos.vista.gui;
 
+import avilaos.cluster.CargaSimulacion;
 import avilaos.cluster.Cluster;
 import avilaos.config.ArchivoConfiguracion;
 import avilaos.config.ConfiguracionSistema;
@@ -36,9 +37,12 @@ public class VentanaPrincipal extends JFrame implements ObservadorReloj {
 
     private final Cluster cluster;
     private final File archivo;
+    private final CargaSimulacion carga;
     private final PanelControl control;
     private final PanelComputador[] paneles;
-    private final PanelInferior inferior = new PanelInferior();
+    private final PanelInferior inferior;
+    private final PanelArchivos panelArchivos;
+    private final PanelDisco panelDisco;
     private final PuenteEDT<FotoCluster> puente;
     private final ConsolaTerminal consola;
     private final Timer vigilante;
@@ -53,11 +57,22 @@ public class VentanaPrincipal extends JFrame implements ObservadorReloj {
 
     /** Arma la ventana sobre el clúster indicado, sin iniciar la simulación; archivo es la configuración vigente para reiniciar. */
     public VentanaPrincipal(Cluster cluster, ConsolaTerminal consola, File archivo) {
-        super("ÁvilaOS  -  " + archivo.getName());
+        this(cluster, consola, archivo, null);
+    }
+
+    /** Ventana del Proyecto 2: un computador con disco, armado con los dos JSON de la carga (Stop vuelve a armar desde ellos). */
+    public VentanaPrincipal(Cluster cluster, ConsolaTerminal consola, CargaSimulacion carga) {
+        this(cluster, consola, null, carga);
+    }
+
+    private VentanaPrincipal(Cluster cluster, ConsolaTerminal consola, File archivo, CargaSimulacion carga) {
+        super(carga != null ? "ÁvilaOS  -  disco, sistema de archivos y suspensión" : "ÁvilaOS  -  " + archivo.getName());
         this.cluster = cluster;
         this.archivo = archivo;
+        this.carga = carga;
         this.consola = consola;
-        this.control = new PanelControl(cluster);
+        this.control = new PanelControl(cluster, carga != null);
+        this.inferior = new PanelInferior(carga, cluster);
         this.puente = new PuenteEDT<>(this::refrescar);
         setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
         setLayout(new BorderLayout());
@@ -75,15 +90,27 @@ public class VentanaPrincipal extends JFrame implements ObservadorReloj {
         scroll.getVerticalScrollBar().setUnitIncrement(24);
         scroll.setMinimumSize(new Dimension(0, 150));
 
-        JSplitPane division = new JSplitPane(JSplitPane.VERTICAL_SPLIT, scroll, inferior);
-        division.setResizeWeight(0.75);
-        division.setOneTouchExpandable(true);
-        division.setContinuousLayout(true);
-        division.setBorder(null);
+        java.awt.Component arriba = scroll;
+        if (carga != null) {
+            panelArchivos = new PanelArchivos(cluster, control);
+            panelDisco = new PanelDisco();
+            panelArchivos.setMinimumSize(new Dimension(220, 150));
+            scroll.setMinimumSize(new Dimension(380, 150));
+            panelDisco.setMinimumSize(new Dimension(300, 150));
+            JSplitPane izquierda = dividir(JSplitPane.HORIZONTAL_SPLIT, panelArchivos, scroll, 0.0);
+            izquierda.setDividerLocation(330);
+            JSplitPane centro = dividir(JSplitPane.HORIZONTAL_SPLIT, izquierda, panelDisco, 0.55);
+            centro.setDividerLocation(870);
+            arriba = centro;
+        } else {
+            panelArchivos = null;
+            panelDisco = null;
+        }
+        JSplitPane division = dividir(JSplitPane.VERTICAL_SPLIT, arriba, inferior, 0.72);
         add(division, BorderLayout.CENTER);
 
         setMinimumSize(new Dimension(900, 700));
-        setSize(1280, 800);
+        setSize(carga != null ? 1440 : 1280, carga != null ? 920 : 800);
         setLocationRelativeTo(null);
         addWindowListener(new WindowAdapter() {
             @Override
@@ -94,6 +121,101 @@ public class VentanaPrincipal extends JFrame implements ObservadorReloj {
         cluster.agregarObservador(this);
         vigilante = new Timer(REFRESCO_ESTADO_MS, e -> vigilarEstado());
         vigilante.start();
+    }
+
+    /** Divisor redimensionable con flecha para expandir. */
+    private static JSplitPane dividir(int orientacion, java.awt.Component a, java.awt.Component b, double peso) {
+        JSplitPane division = new JSplitPane(orientacion, a, b);
+        division.setResizeWeight(peso);
+        division.setOneTouchExpandable(true);
+        division.setContinuousLayout(true);
+        division.setBorder(null);
+        return division;
+    }
+
+    /** Proyecto 2 al arrancar: pide los dos JSON, arma el sistema con sus procesos y abre la ventana en pausa. */
+    public static void abrirProyecto2() {
+        CargaSimulacion carga = new CargaSimulacion();
+        DialogoCarga dialogo = new DialogoCarga(null, carga, null);
+        dialogo.setVisible(true);
+        if (!dialogo.isAceptado()) {
+            System.exit(0);
+            return;
+        }
+        LogEventos log = new LogEventos(LogEventos.CAPACIDAD_POR_DEFECTO);
+        Debug.setLog(log);
+        CargaSimulacion.Resultado resultado = carga.armarConProcesos(log);
+        if (!resultado.armado()) {
+            SelectorConfiguracion.error(null, "ÁvilaOS", "No se pudo armar el sistema: " + resultado.motivo());
+            System.exit(1);
+            return;
+        }
+        ConsolaTerminal consola = new ConsolaTerminal(resultado.cluster());
+        consola.iniciar();
+        VentanaPrincipal ventana = new VentanaPrincipal(resultado.cluster(), consola, carga);
+        ventana.mostrar();
+        SwingUtilities.invokeLater(() -> DialogoProblemas.mostrarSiHay(ventana, "Observaciones de la carga", resultado.problemas()));
+    }
+
+    /** Proyecto 2: elige otros JSON (o conserva el disco actual) y, si se aceptan, detiene y rearma todo, en pausa. */
+    public void cargarJSON() {
+        if (cargando || carga == null) {
+            return;
+        }
+        CargaSimulacion nueva = new CargaSimulacion();
+        nueva.usarSistemaArchivos(carga.getSistemaArchivos());
+        nueva.usarProcesos(carga.getProcesos());
+        cluster.formularioAbierto(true);
+        DialogoCarga dialogo;
+        try {
+            dialogo = new DialogoCarga(this, nueva, cluster.getComputador(0));
+            dialogo.setVisible(true);
+        } finally {
+            cluster.formularioAbierto(false);
+        }
+        if (dialogo.isAceptado()) {
+            detenerYRearmar(nueva, "JSON cargados. Pulsa Iniciar.", false);
+        }
+    }
+
+    /** Detiene y apaga este sistema en otro hilo y luego arma uno nuevo con la carga, en el hilo de Swing. */
+    private void detenerYRearmar(CargaSimulacion nueva, String aviso, boolean iniciarDespues) {
+        cargando = true;
+        Thread hilo = new Thread(() -> {
+            cluster.detener();
+            cluster.apagar();
+            SwingUtilities.invokeLater(() -> rearmar(nueva, aviso, iniciarDespues));
+        }, "Hilo-Rearmado-GUI");
+        hilo.setDaemon(true);
+        hilo.start();
+    }
+
+    private void rearmar(CargaSimulacion nueva, String aviso, boolean iniciarDespues) {
+        emitirResumenFinal();
+        LogEventos log = new LogEventos(LogEventos.CAPACIDAD_POR_DEFECTO);
+        Debug.setLog(log);
+        CargaSimulacion.Resultado resultado = nueva.armarConProcesos(log);
+        CargaSimulacion vigente = nueva;
+        if (!resultado.armado()) {
+            vigente = carga;
+            resultado = carga.armarConProcesos(log);
+            aviso = "No se pudo armar con los JSON nuevos; se rearmó con los anteriores";
+        }
+        Cluster nuevo = resultado.cluster();
+        if (consola != null) {
+            consola.reemplazarCluster(nuevo);
+        }
+        VentanaPrincipal ventana = new VentanaPrincipal(nuevo, consola, vigente);
+        ventana.setBounds(getBounds());
+        ventana.setExtendedState(getExtendedState());
+        ventana.mostrar();
+        ventana.control.avisar(aviso, vigente != nueva);
+        DialogoProblemas.mostrarSiHay(ventana, "Observaciones de la carga", resultado.problemas());
+        vigilante.stop();
+        dispose();
+        if (iniciarDespues) {
+            nuevo.iniciar();
+        }
     }
 
     /** Valida el archivo; si es correcto detiene este clúster y abre una ventana nueva con el clúster cargado, en pausa. */
@@ -118,6 +240,11 @@ public class VentanaPrincipal extends JFrame implements ObservadorReloj {
      */
     public void reiniciar(boolean iniciarDespues) {
         if (cargando) {
+            return;
+        }
+        if (carga != null) {
+            detenerYRearmar(carga, iniciarDespues ? "Simulación reiniciada con los mismos dos JSON"
+                    : "Simulación detenida y rearmada con los mismos dos JSON. Pulsa Iniciar o carga otros.", iniciarDespues);
             return;
         }
         ConfiguracionSistema config;
@@ -191,6 +318,11 @@ public class VentanaPrincipal extends JFrame implements ObservadorReloj {
         control.actualizarEstado();
         for (int i = 0; i < paneles.length; i++) {
             paneles[i].mostrar(foto.computadores()[i]);
+        }
+        if (foto.conDisco() && panelDisco != null) {
+            panelArchivos.mostrar(foto.archivos());
+            panelDisco.mostrar(foto.disco());
+            control.mostrarDisco(foto.disco().politica(), foto.archivos().usuarios());
         }
         inferior.mostrar(foto);
     }
