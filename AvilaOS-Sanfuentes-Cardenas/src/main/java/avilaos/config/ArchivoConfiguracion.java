@@ -213,7 +213,7 @@ public final class ArchivoConfiguracion {
     }
 
     /** Acepta true/false o los textos "TRUE"/"FALSE" sin distinguir mayúsculas; si no, devuelve null. */
-    private static Boolean interpretarBooleano(JsonElement elemento) {
+    static Boolean interpretarBooleano(JsonElement elemento) {
         if (elemento == null || !elemento.isJsonPrimitive()) {
             return null;
         }
