@@ -14,8 +14,23 @@ public final class Debug {
     private static volatile LogEventos log = null;
     private static final ConsolaDebug consola = new ConsolaDebug(1000);
     private static final AtomicLong errores = new AtomicLong();
+    private static final InheritableThreadLocal<Boolean> segundoPlano = new InheritableThreadLocal<>();
 
     private Debug() {
+    }
+
+    /** Marca o desmarca este hilo como ejecución en segundo plano; los hilos que cree después lo heredan. */
+    public static void setSegundoPlano(boolean valor) {
+        if (valor) {
+            segundoPlano.set(true);
+        } else {
+            segundoPlano.remove();
+        }
+    }
+
+    /** Indica si este hilo es de una ejecución en segundo plano: solo muestra sus ERROR. */
+    public static boolean isSegundoPlano() {
+        return segundoPlano.get() != null;
     }
 
     /** Activa o desactiva el debugger. */
@@ -28,9 +43,11 @@ public final class Debug {
         return activo;
     }
 
-    /** Actualiza el ciclo que aparece en el prefijo de cada mensaje. */
+    /** Actualiza el ciclo que aparece en el prefijo de cada mensaje; en segundo plano no lo toca. */
     public static void setCiclo(long valor) {
-        ciclo = valor;
+        if (!isSegundoPlano()) {
+            ciclo = valor;
+        }
     }
 
     /** Asocia el log de eventos que se muestra junto a cada error. */
@@ -50,14 +67,14 @@ public final class Debug {
 
     /** Mensaje de operación correcta. */
     public static void ok(String origen, String mensaje) {
-        if (activo) {
+        if (activo && !isSegundoPlano()) {
             escribir(formatear("OK", origen, mensaje));
         }
     }
 
     /** Mensaje informativo de lo que ocurre en el sistema. */
     public static void info(String origen, String mensaje) {
-        if (activo) {
+        if (activo && !isSegundoPlano()) {
             escribir(formatear("INFO", origen, mensaje));
         }
     }
@@ -68,9 +85,10 @@ public final class Debug {
         if (!activo) {
             return;
         }
-        StringBuilder sb = new StringBuilder(formatear("ERROR", origen, mensaje));
+        boolean aparte = isSegundoPlano();
+        StringBuilder sb = new StringBuilder(formatear("ERROR", origen, (aparte ? "(en segundo plano) " : "") + mensaje));
         sb.append("\n        en ").append(ubicacionLlamada());
-        LogEventos actual = log;
+        LogEventos actual = aparte ? null : log;
         if (actual != null) {
             String ultimos = actual.ultimos(EVENTOS_EN_ERROR, "\n          ");
             if (!ultimos.isEmpty()) {
@@ -82,7 +100,7 @@ public final class Debug {
 
     /** Imprime un bloque de texto tal cual, sin prefijo (reportes y gráficos). */
     public static void bloque(String texto) {
-        if (activo) {
+        if (activo && !isSegundoPlano()) {
             escribir(texto);
         }
     }
