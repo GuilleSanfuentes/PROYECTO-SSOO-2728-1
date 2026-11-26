@@ -20,6 +20,9 @@ import avilaos.hardware.SistemaOperativo;
 import avilaos.hardware.TarjetaRed;
 import avilaos.log.Debug;
 import avilaos.log.LogEventos;
+import avilaos.so.archivos.SistemaArchivos;
+import avilaos.so.disco.PlanificadorDisco;
+import avilaos.so.disco.SolicitudDisco;
 import avilaos.so.programas.Instruccion;
 import avilaos.so.programas.ProgramaBuffer;
 import avilaos.so.programas.ProgramaIOBound;
@@ -55,6 +58,8 @@ public class Kernel implements SistemaOperativo {
     private volatile LineaInterrupciones[] lineas;
     private volatile TarjetaRed red;
     private volatile int latenciaRed;
+    private volatile PlanificadorDisco planificadorDisco;
+    private volatile ServicioArchivos archivos;
     private PCB enEjecucion;
     private int ciclosEnCPU;
 
@@ -84,6 +89,12 @@ public class Kernel implements SistemaOperativo {
         this.latenciaRed = latencia;
     }
 
+    /** Conecta el planificador del disco local y su sistema de archivos. */
+    public void conectarDisco(PlanificadorDisco disco, SistemaArchivos sistema) {
+        this.planificadorDisco = disco;
+        this.archivos = new ServicioArchivos(sistema);
+    }
+
     /** Recibe un proceso nuevo en la cola de Nuevos. Rechaza los que nunca cabrían en la RAM. */
     public boolean agregarProceso(PCB pcb, long ciclo) {
         if (pcb.getMemoria() > ram.getCapacidad()) {
@@ -92,6 +103,10 @@ public class Kernel implements SistemaOperativo {
             return false;
         }
         if (pcb.getTipo().usaBuffer() && !bufferExiste(pcb)) {
+            return false;
+        }
+        if (pcb.getDatosES() != null && planificadorDisco == null) {
+            Debug.error(origen, pcb.getEtiqueta() + " es de E/S de archivos y este computador no tiene disco; se rechaza");
             return false;
         }
         mutex.acquireUninterruptibly();
@@ -224,6 +239,10 @@ public class Kernel implements SistemaOperativo {
             Debug.info(origen, "interrupción de " + irq.etiqueta() + " ignorada: ya no está bloqueado");
             return;
         }
+        if (irq.tipo() == TipoInterrupcion.FIN_DISCO) {
+            atenderFinDisco(pcb, ciclo);
+            return;
+        }
         bloqueados.eliminar(pcb);
         if (irq.tipo() == TipoInterrupcion.FIN_RED) {
             completarAccesoRemoto(pcb, ciclo);
@@ -236,6 +255,90 @@ public class Kernel implements SistemaOperativo {
             listos.encolar(pcb);
             evento(ciclo, "Proceso " + pcb.getEtiqueta() + " se desbloquea (" + irq.tipo().getNombre() + ") y pasa a Listos");
         }
+    }
+
+    /** El disco terminó: aplica el cambio y devuelve el proceso a Listos, o lo termina si falló o venció su deadline. */
+    private void atenderFinDisco(PCB pcb, long ciclo) {
+        if (pcb.getSolicitudPendiente() == null) {
+            Debug.info(origen, "fin de disco ignorado: " + pcb.getEtiqueta() + " no espera ninguna solicitud");
+            return;
+        }
+        ServicioArchivos.Aplicacion resultado = archivos.aplicar(pcb);
+        pcb.setSolicitudPendiente(null);
+        if (resultado.motivo() == null) {
+            evento(ciclo, "Cambio aplicado por " + pcb.getEtiqueta() + ": " + resultado.cambio());
+        } else {
+            pcb.setMotivoRechazo(resultado.motivo());
+            evento(ciclo, "No se aplica la operación de " + pcb.getEtiqueta() + " (" + pcb.getDatosES().describir() + "): "
+                    + resultado.motivo());
+        }
+        bloqueados.eliminar(pcb);
+        if (pcb.isVencidoEnDisco()) {
+            evento(ciclo, "Proceso " + pcb.getEtiqueta() + " alcanza su deadline y es terminado (el disco ya acabó su solicitud)");
+            terminarProceso(pcb, ciclo, true);
+        } else if (resultado.motivo() != null) {
+            terminarProceso(pcb, ciclo, false);
+        } else {
+            pcb.desbloquear(ciclo);
+            listos.encolar(pcb);
+            evento(ciclo, "Proceso " + pcb.getEtiqueta() + " se desbloquea (" + TipoInterrupcion.FIN_DISCO.getNombre()
+                    + ") y pasa a Listos");
+        }
+    }
+
+    /** Llamada al sistema sobre archivos: si es válida va al disco y bloquea; devuelve si el proceso sigue en la CPU. */
+    private boolean solicitarDisco(PCB pcb, long ciclo) {
+        DatosES datos = pcb.getDatosES();
+        evento(ciclo, "Proceso " + pcb.getEtiqueta() + " pide al sistema: " + datos.describir() + " (usuario "
+                + datos.usuario().nombre() + ")");
+        ServicioArchivos.Preparacion preparacion = archivos.preparar(pcb);
+        if (preparacion.motivo() != null) {
+            rechazarOperacion(pcb, preparacion.motivo(), ciclo);
+            return false;
+        }
+        if (!preparacion.usaDisco()) {
+            evento(ciclo, "Cambio aplicado por " + pcb.getEtiqueta() + " sin usar el disco: " + preparacion.cambio());
+            return true;
+        }
+        SolicitudDisco solicitud = planificadorDisco.encolar(pcb.getId(), pcb.getEtiqueta(), datos.operacion(), datos.ruta(),
+                preparacion.bloques(), ciclo);
+        if (solicitud == null) {
+            archivos.descartar(preparacion.reserva());
+            rechazarOperacion(pcb, "el disco no admitió la solicitud", ciclo);
+            return false;
+        }
+        liberarCPU();
+        pcb.restaurarPrioridad();
+        pcb.bloquear(MotivoBloqueo.ENTRADA_SALIDA, "esperando el disco: solicitud #" + solicitud.id() + ", bloque "
+                + solicitud.destino(), ciclo);
+        pcb.setSolicitudPendiente(new SolicitudPendiente(solicitud.id(), preparacion.idEntrada(), preparacion.reserva()));
+        bloqueados.agregarFinal(pcb);
+        evento(ciclo, "Proceso " + pcb.getEtiqueta() + " se bloquea por E/S (solicitud #" + solicitud.id() + " al disco)");
+        return false;
+    }
+
+    /** Termina al proceso cuya operación no se puede hacer, sin enviar nada al disco. */
+    private void rechazarOperacion(PCB pcb, String motivo, long ciclo) {
+        pcb.setMotivoRechazo(motivo);
+        evento(ciclo, "Se rechaza la operación de " + pcb.getEtiqueta() + " (" + pcb.getDatosES().describir() + "): " + motivo);
+        liberarCPU();
+        terminarProceso(pcb, ciclo, false);
+    }
+
+    /** Vence un proceso que espera el disco: si está en cola la cancela (true); si ya se atiende, lo deja acabar. */
+    private boolean cancelarEnDisco(PCB pcb, long ciclo) {
+        if (pcb.isVencidoEnDisco()) {
+            return false;
+        }
+        if (planificadorDisco.cancelar(pcb.getId(), ciclo) == null) {
+            pcb.marcarVencidoEnDisco();
+            evento(ciclo, "Proceso " + pcb.getEtiqueta()
+                    + " alcanza su deadline mientras el disco atiende su solicitud; terminará cuando el disco acabe");
+            return false;
+        }
+        archivos.descartar(pcb.getSolicitudPendiente().reserva());
+        pcb.setSolicitudPendiente(null);
+        return true;
     }
 
     /** Portero de la RAM: entra el más importante que quepa. */
@@ -285,7 +388,9 @@ public class Kernel implements SistemaOperativo {
         PCB pcb = enEjecucion;
         Instruccion instruccion = pcb.instruccionActual();
         if (instruccion == null) {
-            Debug.error(origen, pcb.getEtiqueta() + " en CPU sin instrucciones pendientes; se termina");
+            if (pcb.getDatosES() == null) {
+                Debug.error(origen, pcb.getEtiqueta() + " en CPU sin instrucciones pendientes; se termina");
+            }
             cpu.ejecutarCodigoSO("termina " + pcb.getEtiqueta());
             liberarCPU();
             terminarProceso(pcb, ciclo, false);
@@ -300,6 +405,7 @@ public class Kernel implements SistemaOperativo {
                 solicitarES(pcb, ciclo);
                 sigueEnCPU = false;
             }
+            case SOLICITAR_DISCO -> sigueEnCPU = solicitarDisco(pcb, ciclo);
             case SEM_WAIT -> sigueEnCPU = semWait(pcb, instruccion.semaforo(), ciclo);
             case SEM_SIGNAL -> semSignal(pcb, instruccion.semaforo(), ciclo);
             case INSERTAR -> sigueEnCPU = insertar(pcb, ciclo);
@@ -506,10 +612,13 @@ public class Kernel implements SistemaOperativo {
     /** Saca al proceso de donde esté (CPU, cola, DMA o cola de un semáforo) y lo termina por deadline vencido. */
     private void terminarPorDeadline(PCB pcb, long ciclo) {
         boolean esperabaEnCola = false;
+        if (pcb.getSolicitudPendiente() != null && !cancelarEnDisco(pcb, ciclo)) {
+            return;
+        }
         if (pcb == enEjecucion) {
             liberarCPU();
         } else if (!nuevos.eliminar(pcb) && !listos.eliminar(pcb) && bloqueados.eliminar(pcb)) {
-            if (pcb.getMotivoBloqueo() == MotivoBloqueo.ENTRADA_SALIDA) {
+            if (pcb.getMotivoBloqueo() == MotivoBloqueo.ENTRADA_SALIDA && pcb.getDatosES() == null) {
                 dma.cancelar(pcb.getId());
             } else if (pcb.getMotivoBloqueo() == MotivoBloqueo.SEMAFORO) {
                 Buffer buffer = bufferDe(pcb);

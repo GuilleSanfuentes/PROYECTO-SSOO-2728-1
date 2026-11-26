@@ -4,6 +4,7 @@ package avilaos.enums;
 public enum TipoInterrupcion {
     FIN_ES("Fin de E/S"),
     FIN_RED("Fin de acceso remoto"),
+    FIN_DISCO("Fin de disco"),
     SEMAFORO_SIGNAL("Despertar por semáforo");
 
     private final String nombre;

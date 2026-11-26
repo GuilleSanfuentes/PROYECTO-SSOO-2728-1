@@ -2,9 +2,11 @@ package avilaos.cluster;
 
 import avilaos.config.ConfigComputador;
 import avilaos.config.ConfigDisco;
+import avilaos.enums.TipoInterrupcion;
 import avilaos.hardware.CPU;
 import avilaos.hardware.DMA;
 import avilaos.hardware.DiscoSD;
+import avilaos.hardware.Interrupcion;
 import avilaos.hardware.LineaInterrupciones;
 import avilaos.hardware.RAM;
 import avilaos.hardware.Reloj;
@@ -64,6 +66,9 @@ public class Computador {
             this.planificadorDisco = new PlanificadorDisco("PlanifDisco" + sufijo, disco, configDisco.politica(), log,
                     configDisco.ciclosAnticipacion());
             this.sistemaArchivos = new SistemaArchivos("FS" + sufijo, asignador);
+            kernel.conectarDisco(planificadorDisco, sistemaArchivos);
+            planificadorDisco.setAlTerminar((solicitud, ciclo) -> linea.registrar(new Interrupcion(TipoInterrupcion.FIN_DISCO,
+                    solicitud.idProceso(), solicitud.etiqueta(), disco.getNombre(), ciclo)));
         }
         Debug.ok(nombre, "ensamblado: RAM " + ram.getCapacidad() + ", " + planificador.describir());
     }
