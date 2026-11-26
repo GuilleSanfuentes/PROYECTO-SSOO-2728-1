@@ -4,7 +4,13 @@ import avilaos.enums.TipoOperacionES;
 
 /** Solicitud de E/S en la cola del disco: quién la pide, qué operación y qué bloques recorre (el primero es su destino). */
 public record SolicitudDisco(int id, int idProceso, String etiqueta, TipoOperacionES operacion, String ruta,
-        int[] bloques, long cicloLlegada) {
+        int[] bloques, long cicloLlegada, long anticipadosAlLlegar) {
+
+    /** Solicitud que llega antes de cualquier espera anticipatoria. */
+    public SolicitudDisco(int id, int idProceso, String etiqueta, TipoOperacionES operacion, String ruta, int[] bloques,
+            long cicloLlegada) {
+        this(id, idProceso, etiqueta, operacion, ruta, bloques, cicloLlegada, 0);
+    }
 
     /** Bloque al que debe ir el cabezal para empezar a atenderla. */
     public int destino() {
