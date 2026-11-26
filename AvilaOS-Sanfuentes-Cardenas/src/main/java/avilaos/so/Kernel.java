@@ -291,13 +291,16 @@ public class Kernel implements SistemaOperativo {
         }
     }
 
-    /** Devuelve a Listos al proceso que esperaba (E/S o semáforo); si era su última instrucción, lo termina. */
+    /** Atiende una interrupción: fin de un intercambio, o el evento que esperaba un bloqueado (suspendido o no). */
     private void atenderInterrupcion(Interrupcion irq, long ciclo) {
         if (esFinDeIntercambio(irq)) {
             terminarIntercambio(buscarEnEspera(irq.idProceso()), ciclo);
             return;
         }
         PCB pcb = buscar(bloqueados.getCabeza(), irq.idProceso());
+        if (pcb == null) {
+            pcb = buscar(bloqueadosSuspendidos.getCabeza(), irq.idProceso());
+        }
         if (pcb == null) {
             Debug.info(origen, "interrupción de " + irq.etiqueta() + " ignorada: ya no está bloqueado");
             return;
@@ -310,17 +313,38 @@ public class Kernel implements SistemaOperativo {
             atenderFinDisco(pcb, ciclo);
             return;
         }
-        bloqueados.eliminar(pcb);
         if (irq.tipo() == TipoInterrupcion.FIN_RED) {
             completarAccesoRemoto(pcb, ciclo);
         }
-        if (pcb.programaTerminado()) {
-            evento(ciclo, "Proceso " + pcb.getEtiqueta() + " termina su última espera");
+        ocurreEvento(pcb, irq.tipo(), ciclo);
+    }
+
+    /** Ya ocurrió lo que esperaba: pasa a Listo o a Listo/Suspendido, o termina si no le queda nada que hacer. */
+    private void ocurreEvento(PCB pcb, TipoInterrupcion tipo, long ciclo) {
+        if (pcb.getIntercambio() == TipoOperacionES.SUSPENDER && !cancelarSuspension(pcb, ciclo)) {
+            pcb.marcarEventoEnTransito(tipo);
+            evento(ciclo, "Proceso " + pcb.getEtiqueta() + ": ocurre su evento (" + tipo.getNombre()
+                    + ") mientras se escribe en el swap; la suspensión se completa");
+            return;
+        }
+        boolean suspendido = bloqueadosSuspendidos.eliminar(pcb);
+        if (!suspendido) {
+            bloqueados.eliminar(pcb);
+        }
+        if (pcb.getMotivoRechazo() != null || (pcb.getDatosES() == null && pcb.programaTerminado())) {
+            if (pcb.getMotivoRechazo() == null) {
+                evento(ciclo, "Proceso " + pcb.getEtiqueta() + " termina su última espera");
+            }
             terminarProceso(pcb, ciclo, false);
+        } else if (suspendido) {
+            pcb.ocurrirEventoSuspendido(ciclo);
+            listosSuspendidos.agregarFinal(pcb);
+            evento(ciclo, "Proceso " + pcb.getEtiqueta() + ": Bloqueado/Suspendido -> Listo/Suspendido ("
+                    + tipo.getNombre() + ")");
         } else {
             pcb.desbloquear(ciclo);
             listos.encolar(pcb);
-            evento(ciclo, "Proceso " + pcb.getEtiqueta() + " se desbloquea (" + irq.tipo().getNombre() + ") y pasa a Listos");
+            evento(ciclo, "Proceso " + pcb.getEtiqueta() + " se desbloquea (" + tipo.getNombre() + ") y pasa a Listos");
         }
     }
 
@@ -339,17 +363,10 @@ public class Kernel implements SistemaOperativo {
             evento(ciclo, "No se aplica la operación de " + pcb.getEtiqueta() + " (" + pcb.getDatosES().describir() + "): "
                     + resultado.motivo());
         }
-        bloqueados.eliminar(pcb);
         if (pcb.isVencidoEnDisco()) {
-            evento(ciclo, "Proceso " + pcb.getEtiqueta() + " alcanza su deadline y es terminado (el disco ya acabó su solicitud)");
-            terminarProceso(pcb, ciclo, true);
-        } else if (resultado.motivo() != null) {
-            terminarProceso(pcb, ciclo, false);
+            terminarVencido(pcb, ciclo);
         } else {
-            pcb.desbloquear(ciclo);
-            listos.encolar(pcb);
-            evento(ciclo, "Proceso " + pcb.getEtiqueta() + " se desbloquea (" + TipoInterrupcion.FIN_DISCO.getNombre()
-                    + ") y pasa a Listos");
+            ocurreEvento(pcb, TipoInterrupcion.FIN_DISCO, ciclo);
         }
     }
 
@@ -392,20 +409,42 @@ public class Kernel implements SistemaOperativo {
         terminarProceso(pcb, ciclo, false);
     }
 
-    /** Vence un proceso que espera el disco: si está en cola la cancela (true); si ya se atiende, lo deja acabar. */
-    private boolean cancelarEnDisco(PCB pcb, long ciclo) {
-        if (pcb.isVencidoEnDisco()) {
-            return false;
+    /** Al vencer, cancela lo que esté en cola; si el disco ya atiende algo suyo, lo deja acabar y devuelve false. */
+    private boolean cancelarSolicitudes(PCB pcb, long ciclo) {
+        boolean enAtencion = false;
+        if (pcb.getIntercambio() == TipoOperacionES.SUSPENDER) {
+            enAtencion = !cancelarSuspension(pcb, ciclo);
+        } else if (pcb.getIntercambio() == TipoOperacionES.REACTIVAR) {
+            if (planificadorDisco.cancelarSolicitud(pcb.getIdIntercambio(), ciclo) == null) {
+                enAtencion = true;
+            } else {
+                pcb.setIntercambio(null, 0);
+            }
         }
-        if (planificadorDisco.cancelarSolicitud(pcb.getSolicitudPendiente().idSolicitud(), ciclo) == null) {
+        SolicitudPendiente pendiente = pcb.getSolicitudPendiente();
+        if (pendiente != null) {
+            if (planificadorDisco.cancelarSolicitud(pendiente.idSolicitud(), ciclo) == null) {
+                enAtencion = true;
+            } else {
+                archivos.descartar(pendiente.reserva());
+                pcb.setSolicitudPendiente(null);
+            }
+        }
+        if (enAtencion) {
             pcb.marcarVencidoEnDisco();
             evento(ciclo, "Proceso " + pcb.getEtiqueta()
                     + " alcanza su deadline mientras el disco atiende su solicitud; terminará cuando el disco acabe");
-            return false;
         }
-        archivos.descartar(pcb.getSolicitudPendiente().reserva());
-        pcb.setSolicitudPendiente(null);
-        return true;
+        return !enAtencion;
+    }
+
+    /** El disco acabó la solicitud de un proceso cuyo deadline ya había vencido: cancela lo demás y lo termina. */
+    private void terminarVencido(PCB pcb, long ciclo) {
+        if (pcb.getIntercambio() == TipoOperacionES.SUSPENDER) {
+            cancelarSuspension(pcb, ciclo);
+        }
+        evento(ciclo, "Proceso " + pcb.getEtiqueta() + " alcanza su deadline y es terminado (el disco ya acabó su solicitud)");
+        retirarYTerminar(pcb, ciclo);
     }
 
     /** Portero de la RAM: entra el más importante que quepa. */
@@ -458,7 +497,7 @@ public class Kernel implements SistemaOperativo {
         if (ram.cabe(elegido.getMemoria())) {
             nuevos.eliminar(elegido);
             ram.reservar(elegido.getEtiqueta(), elegido.getMemoria());
-            beneficiario = null;
+            abandonarBeneficiario(ciclo);
             pasarAListos(elegido, ciclo);
             return true;
         }
@@ -522,6 +561,7 @@ public class Kernel implements SistemaOperativo {
                 suspender(victima.getDato(), destino, ciclo);
                 victima = victima.getSiguiente();
             }
+            excedentePlan = Math.max(0, ram.getLibre() + ramEnCamino() - destino.getMemoria());
         } else if (-faltante > excedentePlan) {
             cancelarSobrantes(-faltante - excedentePlan, ciclo);
         }
@@ -602,9 +642,17 @@ public class Kernel implements SistemaOperativo {
     /** El disco acabó de escribir o leer el swap: se completa la suspensión o la reactivación. */
     private void terminarIntercambio(PCB pcb, long ciclo) {
         TipoOperacionES operacion = pcb.getIntercambio();
+        TipoInterrupcion eventoOcurrido = pcb.getEventoEnTransito();
         pcb.setIntercambio(null, 0);
         if (operacion == TipoOperacionES.SUSPENDER) {
             terminarSuspension(pcb, ciclo);
+            if (pcb.isVencidoEnDisco()) {
+                terminarVencido(pcb, ciclo);
+            } else if (eventoOcurrido != null) {
+                ocurreEvento(pcb, eventoOcurrido, ciclo);
+            }
+        } else if (pcb.isVencidoEnDisco()) {
+            terminarVencido(pcb, ciclo);
         } else {
             terminarReactivacion(pcb, ciclo);
         }
@@ -926,15 +974,23 @@ public class Kernel implements SistemaOperativo {
         ciclosEnCPU = 0;
     }
 
-    /** Saca al proceso de donde esté (CPU, cola, DMA o cola de un semáforo) y lo termina por deadline vencido. */
+    /** Termina por deadline vencido; si el disco ya atiende una solicitud suya, espera a que la acabe. */
     private void terminarPorDeadline(PCB pcb, long ciclo) {
-        boolean esperabaEnCola = false;
-        if (pcb.getSolicitudPendiente() != null && !cancelarEnDisco(pcb, ciclo)) {
+        if (pcb.isVencidoEnDisco() || !cancelarSolicitudes(pcb, ciclo)) {
             return;
         }
+        evento(ciclo, "Proceso " + pcb.getEtiqueta() + " alcanza su deadline y es terminado (estaba en "
+                + pcb.getEstado().getNombre() + ")");
+        retirarYTerminar(pcb, ciclo);
+    }
+
+    /** Saca al proceso de donde esté (CPU, colas, dispositivo o semáforo) y lo termina por deadline. */
+    private void retirarYTerminar(PCB pcb, long ciclo) {
+        boolean esperabaEnCola = false;
         if (pcb == enEjecucion) {
             liberarCPU();
-        } else if (!nuevos.eliminar(pcb) && !listos.eliminar(pcb) && bloqueados.eliminar(pcb)) {
+        } else if (!nuevos.eliminar(pcb) && !listos.eliminar(pcb) && !listosSuspendidos.eliminar(pcb)
+                && (bloqueados.eliminar(pcb) || bloqueadosSuspendidos.eliminar(pcb))) {
             if (pcb.getMotivoBloqueo() == MotivoBloqueo.ENTRADA_SALIDA && pcb.getDatosES() == null) {
                 dma.cancelar(pcb.getId());
             } else if (pcb.getMotivoBloqueo() == MotivoBloqueo.SEMAFORO) {
@@ -944,8 +1000,6 @@ public class Kernel implements SistemaOperativo {
                 esperabaEnCola = red != null && red.cancelar(pcb.getId()) > 0;
             }
         }
-        evento(ciclo, "Proceso " + pcb.getEtiqueta() + " alcanza su deadline y es terminado (estaba en "
-                + pcb.getEstado().getNombre() + ")");
         liberarFichas(pcb, esperabaEnCola, ciclo);
         terminarProceso(pcb, ciclo, true);
     }

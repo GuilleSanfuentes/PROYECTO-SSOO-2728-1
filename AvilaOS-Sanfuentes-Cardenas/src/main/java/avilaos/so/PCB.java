@@ -2,6 +2,7 @@ package avilaos.so;
 
 import avilaos.enums.EstadoProceso;
 import avilaos.enums.MotivoBloqueo;
+import avilaos.enums.TipoInterrupcion;
 import avilaos.enums.TipoOperacionES;
 import avilaos.enums.TipoProceso;
 import avilaos.log.Debug;
@@ -52,7 +53,7 @@ public class PCB {
     private int bloqueSwap = SIN_SWAP;
     private TipoOperacionES intercambio;
     private int idIntercambio;
-    private boolean eventoEnTransito;
+    private TipoInterrupcion eventoEnTransito;
 
     /** Crea el PCB en estado Nuevo. Usar FabricaProcesos, que valida los datos. */
     PCB(int id, String nombre, TipoProceso tipo, Programa programa, int memoria, int prioridad,
@@ -196,17 +197,22 @@ public class PCB {
     void setIntercambio(TipoOperacionES operacion, int idSolicitud) {
         this.intercambio = operacion;
         this.idIntercambio = idSolicitud;
-        this.eventoEnTransito = false;
+        this.eventoEnTransito = null;
     }
 
     /** Indica si su evento ocurrió mientras el disco lo escribía en el swap. */
     public boolean isEventoEnTransito() {
+        return eventoEnTransito != null;
+    }
+
+    /** El evento que ocurrió mientras se escribía, o null. */
+    public TipoInterrupcion getEventoEnTransito() {
         return eventoEnTransito;
     }
 
     /** El evento ya ocurrió: dejará de esperar cuando acabe de escribirse. */
-    void marcarEventoEnTransito() {
-        this.eventoEnTransito = true;
+    void marcarEventoEnTransito(TipoInterrupcion evento) {
+        this.eventoEnTransito = evento;
         this.detalleBloqueo = "evento ocurrido; termina de escribirse en el swap";
     }
 
