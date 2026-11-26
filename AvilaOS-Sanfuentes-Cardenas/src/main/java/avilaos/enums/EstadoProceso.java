@@ -6,7 +6,9 @@ public enum EstadoProceso {
     LISTO("Listo"),
     EJECUCION("Ejecución"),
     BLOQUEADO("Bloqueado"),
-    TERMINADO("Terminado");
+    TERMINADO("Terminado"),
+    LISTO_SUSPENDIDO("Listo/Suspendido"),
+    BLOQUEADO_SUSPENDIDO("Bloqueado/Suspendido");
 
     private final String nombre;
 
@@ -17,5 +19,10 @@ public enum EstadoProceso {
     /** Nombre legible para el log y la interfaz. */
     public String getNombre() {
         return nombre;
+    }
+
+    /** Indica si el proceso está fuera de la RAM, en el área de intercambio. */
+    public boolean esSuspendido() {
+        return this == LISTO_SUSPENDIDO || this == BLOQUEADO_SUSPENDIDO;
     }
 }

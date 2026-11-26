@@ -26,6 +26,8 @@ final class ColoresEstado {
             case BLOQUEADO -> ROJO;
             case TERMINADO -> GRIS;
             case NUEVO -> AZUL;
+            case LISTO_SUSPENDIDO -> mezclar(AMARILLO, GRIS, 0.5);
+            case BLOQUEADO_SUSPENDIDO -> mezclar(ROJO, GRIS, 0.5);
         };
     }
 

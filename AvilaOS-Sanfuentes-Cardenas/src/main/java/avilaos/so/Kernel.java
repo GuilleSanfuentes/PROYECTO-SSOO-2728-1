@@ -53,6 +53,8 @@ public class Kernel implements SistemaOperativo {
     private final Cola<PCB> listos = new Cola<>();
     private final ListaEnlazada<PCB> bloqueados = new ListaEnlazada<>();
     private final ListaEnlazada<PCB> terminados = new ListaEnlazada<>();
+    private final ListaEnlazada<PCB> listosSuspendidos = new ListaEnlazada<>();
+    private final ListaEnlazada<PCB> bloqueadosSuspendidos = new ListaEnlazada<>();
     private final ListaEnlazada<Interrupcion> diferidas = new ListaEnlazada<>();
     private volatile RegistroBuffers buffers;
     private volatile LineaInterrupciones[] lineas;
@@ -688,6 +690,16 @@ public class Kernel implements SistemaOperativo {
         return copiar(EstadoProceso.BLOQUEADO);
     }
 
+    /** Copia de la cola de Listos/Suspendidos. */
+    public ListaEnlazada<PCB> getListosSuspendidos() {
+        return copiar(EstadoProceso.LISTO_SUSPENDIDO);
+    }
+
+    /** Copia de la cola de Bloqueados/Suspendidos; cada uno conserva su motivo de bloqueo. */
+    public ListaEnlazada<PCB> getBloqueadosSuspendidos() {
+        return copiar(EstadoProceso.BLOQUEADO_SUSPENDIDO);
+    }
+
     /** Copia de la lista de Terminados. */
     public ListaEnlazada<PCB> getTerminados() {
         return copiar(EstadoProceso.TERMINADO);
@@ -704,6 +716,8 @@ public class Kernel implements SistemaOperativo {
                 todos.agregarFinal(enEjecucion);
             }
             agregarTodos(todos, bloqueados.getCabeza());
+            agregarTodos(todos, listosSuspendidos.getCabeza());
+            agregarTodos(todos, bloqueadosSuspendidos.getCabeza());
             agregarTodos(todos, terminados.getCabeza());
             return todos;
         } finally {
@@ -730,7 +744,8 @@ public class Kernel implements SistemaOperativo {
     public int procesosVivos() {
         mutex.acquireUninterruptibly();
         try {
-            return nuevos.tamano() + listos.tamano() + bloqueados.tamano() + (enEjecucion == null ? 0 : 1);
+            return nuevos.tamano() + listos.tamano() + bloqueados.tamano() + listosSuspendidos.tamano()
+                    + bloqueadosSuspendidos.tamano() + (enEjecucion == null ? 0 : 1);
         } finally {
             mutex.release();
         }
@@ -763,6 +778,8 @@ public class Kernel implements SistemaOperativo {
                 case BLOQUEADO -> bloqueados.getCabeza();
                 case TERMINADO -> terminados.getCabeza();
                 case EJECUCION -> null;
+                case LISTO_SUSPENDIDO -> listosSuspendidos.getCabeza();
+                case BLOQUEADO_SUSPENDIDO -> bloqueadosSuspendidos.getCabeza();
             };
             agregarTodos(copia, cabeza);
             return copia;

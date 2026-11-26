@@ -205,7 +205,7 @@ public final class ReporteTerminal {
             PCB p = nodo.getDato();
             sb.append(sb.length() > 1 ? ", " : "").append(p.getEtiqueta());
             switch (p.getEstado()) {
-                case BLOQUEADO -> sb.append(" (").append(p.getMotivoBloqueo().getNombre())
+                case BLOQUEADO, BLOQUEADO_SUSPENDIDO -> sb.append(" (").append(p.getMotivoBloqueo().getNombre())
                         .append(p.getDetalleBloqueo().isEmpty() ? "" : ": " + p.getDetalleBloqueo()).append(')');
                 case TERMINADO -> sb.append(p.isDeadlineVencido() ? " (deadline)" : "");
                 default -> sb.append(" p").append(p.getPrioridadEfectiva()).append(" dl").append(p.getDeadlineRestante());

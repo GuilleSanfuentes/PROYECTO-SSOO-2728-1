@@ -168,7 +168,7 @@ public final class PruebasPaso1 {
     /** Los enums exponen sus nombres legibles y propiedades. */
     private static void probarEnums() {
         r.grupo("Enums (estados, tipos, políticas, modo CPU, motivos)");
-        r.verificar("EstadoProceso", EstadoProceso.values().length == 5 && EstadoProceso.EJECUCION.getNombre().equals("Ejecución"), "");
+        r.verificar("EstadoProceso", EstadoProceso.values().length == 7 && EstadoProceso.EJECUCION.getNombre().equals("Ejecución"), "");
         r.verificar("TipoProceso.usaBuffer", TipoProceso.PRODUCTOR.usaBuffer() && !TipoProceso.CPU_BOUND.usaBuffer(), "");
         r.verificar("PoliticaTipo.esApropiativa", !PoliticaTipo.FCFS.esApropiativa() && PoliticaTipo.PRIORIDADES.esApropiativa(), "");
         r.verificar("ModoCPU", ModoCPU.SISTEMA_OPERATIVO.getNombre().equals("Sistema operativo"), "");

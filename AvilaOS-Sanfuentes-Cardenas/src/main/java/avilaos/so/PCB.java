@@ -43,6 +43,8 @@ public class PCB {
     private SolicitudPendiente solicitudPendiente;
     private boolean vencidoEnDisco;
     private String motivoRechazo;
+    private long cicloInicioBloqueo = -1;
+    private long cicloListoSuspendido = -1;
 
     /** Crea el PCB en estado Nuevo. Usar FabricaProcesos, que valida los datos. */
     PCB(int id, String nombre, TipoProceso tipo, Programa programa, int memoria, int prioridad,
@@ -117,11 +119,51 @@ public class PCB {
         }
         return switch (hacia) {
             case NUEVO -> false;
-            case LISTO -> desde == EstadoProceso.NUEVO || desde == EstadoProceso.EJECUCION || desde == EstadoProceso.BLOQUEADO;
+            case LISTO -> desde == EstadoProceso.NUEVO || desde == EstadoProceso.EJECUCION || desde == EstadoProceso.BLOQUEADO
+                    || desde == EstadoProceso.LISTO_SUSPENDIDO;
             case EJECUCION -> desde == EstadoProceso.LISTO;
             case BLOQUEADO -> desde == EstadoProceso.EJECUCION;
+            case BLOQUEADO_SUSPENDIDO -> desde == EstadoProceso.BLOQUEADO;
+            case LISTO_SUSPENDIDO -> desde == EstadoProceso.BLOQUEADO_SUSPENDIDO;
             case TERMINADO -> true;
         };
+    }
+
+    /** Sale de la RAM estando bloqueado; conserva el motivo de su bloqueo. */
+    public boolean suspender() {
+        return cambiarEstado(EstadoProceso.BLOQUEADO_SUSPENDIDO);
+    }
+
+    /** Ocurre el evento que esperaba un Bloqueado/Suspendido: pasa a Listo/Suspendido. */
+    public boolean ocurrirEventoSuspendido(long ciclo) {
+        if (!cambiarEstado(EstadoProceso.LISTO_SUSPENDIDO)) {
+            return false;
+        }
+        acumularBloqueoSemaforo(ciclo);
+        motivoBloqueo = MotivoBloqueo.NINGUNO;
+        detalleBloqueo = "";
+        cicloListoSuspendido = ciclo;
+        return true;
+    }
+
+    /** Vuelve a la RAM desde Listo/Suspendido. */
+    public boolean reactivar() {
+        if (estado != EstadoProceso.LISTO_SUSPENDIDO) {
+            Debug.error(ORIGEN, getEtiqueta() + " reactivar estando en " + estado.getNombre());
+            return false;
+        }
+        ciclosEsperandoEnListos = 0;
+        return cambiarEstado(EstadoProceso.LISTO);
+    }
+
+    /** Ciclo en que empezó su último bloqueo, o -1 si nunca se bloqueó. */
+    public long getCicloInicioBloqueo() {
+        return cicloInicioBloqueo;
+    }
+
+    /** Ciclo en que pasó a Listo/Suspendido, o -1 si nunca estuvo así. */
+    public long getCicloListoSuspendido() {
+        return cicloListoSuspendido;
     }
 
     /** Pasa a Bloqueado con su motivo; detalle describe qué espera (ej. "semáforo 'vacío' de B1"). */
@@ -135,6 +177,7 @@ public class PCB {
         }
         motivoBloqueo = motivo;
         detalleBloqueo = detalle == null ? "" : detalle;
+        cicloInicioBloqueo = ciclo;
         if (motivo == MotivoBloqueo.SEMAFORO) {
             cicloInicioBloqueoSemaforo = ciclo;
         }
@@ -372,8 +415,8 @@ public class PCB {
     public String toString() {
         String texto = getEtiqueta() + " '" + nombre + "' [" + estado.getNombre() + "] prio=" + prioridadEfectiva
                 + " dl=" + deadlineRestante + " Contador=" + contador + "/" + programa.totalInstrucciones();
-        if (estado == EstadoProceso.BLOQUEADO) {
-            texto += " (" + motivoBloqueo.getNombre() + (detalleBloqueo.isEmpty() ? "" : ": " + detalleBloqueo) + ")";
+        if (estado == EstadoProceso.BLOQUEADO || estado == EstadoProceso.BLOQUEADO_SUSPENDIDO) {
+            texto +=" (" + motivoBloqueo.getNombre() + (detalleBloqueo.isEmpty() ? "" : ": " + detalleBloqueo) + ")";
         }
         return texto;
     }
