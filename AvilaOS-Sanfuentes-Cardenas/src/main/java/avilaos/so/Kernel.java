@@ -242,6 +242,10 @@ public class Kernel implements SistemaOperativo {
             return;
         }
         if (irq.tipo() == TipoInterrupcion.FIN_DISCO) {
+            if (pcb.getSolicitudPendiente() != null && pcb.getSolicitudPendiente().idSolicitud() != irq.idSolicitud()) {
+                Debug.info(origen, "fin de disco ignorado: " + pcb.getEtiqueta() + " no espera la solicitud #" + irq.idSolicitud());
+                return;
+            }
             atenderFinDisco(pcb, ciclo);
             return;
         }
@@ -332,7 +336,7 @@ public class Kernel implements SistemaOperativo {
         if (pcb.isVencidoEnDisco()) {
             return false;
         }
-        if (planificadorDisco.cancelar(pcb.getId(), ciclo) == null) {
+        if (planificadorDisco.cancelarSolicitud(pcb.getSolicitudPendiente().idSolicitud(), ciclo) == null) {
             pcb.marcarVencidoEnDisco();
             evento(ciclo, "Proceso " + pcb.getEtiqueta()
                     + " alcanza su deadline mientras el disco atiende su solicitud; terminará cuando el disco acabe");

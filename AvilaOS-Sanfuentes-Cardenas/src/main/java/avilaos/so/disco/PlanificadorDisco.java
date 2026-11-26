@@ -157,14 +157,24 @@ public class PlanificadorDisco implements ControladorDisco {
         }
     }
 
-    /** Quita de la cola la solicitud del proceso. Devuelve null si no está en cola (no existe o ya se atiende). */
+    /** Quita de la cola la primera solicitud del proceso. Devuelve null si no tiene ninguna en cola. */
     public SolicitudDisco cancelar(int idProceso, long ciclo) {
+        return quitarDeCola(idProceso, true, ciclo);
+    }
+
+    /** Quita de la cola la solicitud con ese número. Devuelve null si no está en cola (no existe o ya se atiende). */
+    public SolicitudDisco cancelarSolicitud(int idSolicitud, long ciclo) {
+        return quitarDeCola(idSolicitud, false, ciclo);
+    }
+
+    /** Busca en la cola por proceso o por número de solicitud y la retira. */
+    private SolicitudDisco quitarDeCola(int id, boolean porProceso, long ciclo) {
         SolicitudDisco cancelada = null;
         mutex.acquireUninterruptibly();
         try {
             Nodo<SolicitudDisco> nodo = cola.getCabeza();
             while (nodo != null && cancelada == null) {
-                if (nodo.getDato().idProceso() == idProceso) {
+                if ((porProceso ? nodo.getDato().idProceso() : nodo.getDato().id()) == id) {
                     cancelada = nodo.getDato();
                 }
                 nodo = nodo.getSiguiente();

@@ -68,7 +68,7 @@ public class Computador {
             this.sistemaArchivos = new SistemaArchivos("FS" + sufijo, asignador);
             kernel.conectarDisco(planificadorDisco, sistemaArchivos);
             planificadorDisco.setAlTerminar((solicitud, ciclo) -> linea.registrar(new Interrupcion(TipoInterrupcion.FIN_DISCO,
-                    solicitud.idProceso(), solicitud.etiqueta(), disco.getNombre(), ciclo)));
+                    solicitud.idProceso(), solicitud.etiqueta(), disco.getNombre(), ciclo, solicitud.id())));
         }
         Debug.ok(nombre, "ensamblado: RAM " + ram.getCapacidad() + ", " + planificador.describir());
     }
